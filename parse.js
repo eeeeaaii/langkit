@@ -12,14 +12,14 @@ const Parse = (() => {
       for (const row of t?.rows || []) {
         const spelling = (row.cells.orthography || '').trim().toLowerCase();
         const ph = row.cells.phoneme;
-        const ipa = Array.isArray(ph) ? ph.join('') : ph;
-        if (spelling && ipa) list.push({ spelling, ipa });
+        const symbols = [].concat(ph || []).filter(Boolean);
+        if (spelling && symbols.length) list.push({ spelling, ipa: symbols.join(''), symbols });
       }
     }
     return list.sort((a, b) => b.spelling.length - a.spelling.length);
   }
 
-  // Returns segments: { text, ipa } for a match, { text, unknown: true } for an unmatched letter,
+  // Returns segments: { text, ipa, symbols } for a match, { text, unknown: true } for an unmatched letter,
   // or { text } for anything else (spaces, punctuation).
   function segment(text, inv) {
     const lower = text.toLowerCase();
@@ -28,7 +28,7 @@ const Parse = (() => {
     while (i < text.length) {
       const hit = inv.find(e => lower.startsWith(e.spelling, i));
       if (hit) {
-        out.push({ text: text.slice(i, i + hit.spelling.length), ipa: hit.ipa });
+        out.push({ text: text.slice(i, i + hit.spelling.length), ipa: hit.ipa, symbols: hit.symbols });
         i += hit.spelling.length;
         continue;
       }

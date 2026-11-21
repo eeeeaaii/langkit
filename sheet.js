@@ -25,13 +25,14 @@ const Sheet = (() => {
   const viewOf = (tableId, colId) => views.get(tableId + ':' + colId) || 'text';
 
   // IPA: each spelling replaced by its phoneme; letters with no phoneme stay as typed and marked.
+  // Each phoneme is its own span (spaced apart a little) that plays its sound when clicked.
   const ipa = (text, inventory) => {
     let html = '', run = '';
     const flush = () => { if (run) html += `<span class="unknown">${esc(run)}</span>`; run = ''; };
     for (const s of Parse.segment(text, inventory)) {
       if (s.unknown) { run += s.text; continue; }
       flush();
-      html += esc(s.ipa || s.text);
+      html += s.ipa ? `<span class="ipa-sym" data-sym="${esc(s.symbols.join(' '))}" title="Click to hear">${esc(s.ipa)}</span>` : esc(s.text);
     }
     flush();
     return html;
@@ -169,6 +170,17 @@ const Sheet = (() => {
       wrap.classList.add('has-usage');
       wrap.appendChild(badge);
     }
+    // In IPA view the painted symbols sit on top: clicking (or right-clicking) one plays it,
+    // and clicking anywhere else in the cell edits the text.
+    const playSym = e => {
+      const sym = e.target.closest('.ipa-sym');
+      if (!sym) return false;
+      e.preventDefault();
+      Sound.play(sym.dataset.sym.split(' '), sym);
+      return true;
+    };
+    overlay.addEventListener('mousedown', e => { if (!playSym(e) && e.button === 0) { e.preventDefault(); input.focus(); } });
+    overlay.addEventListener('contextmenu', e => { if (e.target.closest('.ipa-sym')) e.preventDefault(); });
     input.addEventListener('scroll', repaint);
     input.addEventListener('focus', repaint);
     input.addEventListener('blur', repaint);
