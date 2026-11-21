@@ -93,7 +93,7 @@ const Sheet = (() => {
     b.setAttribute('aria-label', col.name + (value ? ' ' + value : ''));
     b.addEventListener('keydown', e => moveKey(e, b));
     b.onclick = () => Picker.open(b, type, value, sym => write(col.id, sym || undefined, { focus: {} }));
-    b.oncontextmenu = e => { if (value) { e.preventDefault(); Sound.play(value); } };
+    b.oncontextmenu = e => { if (value) { e.preventDefault(); Sound.play(value, b); } };
     return b;
   }
 
@@ -102,7 +102,7 @@ const Sheet = (() => {
     const list = Array.isArray(value) ? value : [];
     const box = document.createElement('div');
     box.className = 'phon-multi';
-    box.oncontextmenu = e => { if (list.length && !e.target.closest('.phon-add')) { e.preventDefault(); Sound.play(list); } };
+    box.oncontextmenu = e => { if (list.length && !e.target.closest('.phon-add')) { e.preventDefault(); Sound.play(list, box); } };
     const set = next => write(col.id, next.length ? next : undefined, { focus: {} });
 
     if (!list.length) {
@@ -129,7 +129,7 @@ const Sheet = (() => {
         if (sym) next[i] = sym; else next.splice(i, 1);
         set(next);
       }, { clearLabel: 'Remove' });
-      b.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); Sound.play(v); };
+      b.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); Sound.play(v, b); };
       box.appendChild(b);
     });
     box.appendChild(slash());
