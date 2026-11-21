@@ -37,7 +37,7 @@ const Store = (() => {
     { id: 'lexicon', name: 'Lexicon', columns: () => [
       { id: 'word', name: 'Word', type: 'word' },
       { id: 'english', name: 'English', type: 'text' },
-      { id: 'pos', name: 'Part of Speech', type: 'pos' },
+      { id: 'pos', name: 'Part of Speech', type: 'posOne' },
       { id: 'inflection', name: 'Inflection', type: 'inflection' },
       { id: 'note', name: 'Note', type: 'text' },
       { id: 'sentence', name: 'In a Sentence', type: 'word' },

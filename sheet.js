@@ -104,11 +104,12 @@ const Sheet = (() => {
   // under it hold its forms. In the data, a group is its first row (which has the head) plus the rows after
   // it with an empty head. On screen each group is a block: the head spans its rows, and an empty row at the
   // bottom of the block adds another form to that group. The empty row at the very bottom starts a new group.
-  const GROUPED = {
-    inflectionTypes: { key: 'pos', head: ['pos'] },
-    inflections: { key: 'word', head: ['word', 'pattern'] },
-  };
+  // Words come into the Inflection tab from the Lexicon (its Inflection dropdown), so it has no row for starting one.
   const filled = v => Array.isArray(v) ? v.length > 0 : !!(v && String(v).trim());
+  const GROUPED = {
+    inflectionTypes: { starts: r => filled(r.cells.pos), head: ['pos'], move: ['pos'] },
+    inflections: { starts: r => filled(r.cells.word) || filled(r.cells.lex), head: ['word', 'pattern'], move: ['lex', 'word', 'pattern'], fromLexicon: true },
+  };
 
   function renderGroups(tbody, langId, t, ctx) {
     const spec = GROUPED[t.id];
@@ -116,7 +117,7 @@ const Sheet = (() => {
     const bodyCols = t.columns.filter(c => !spec.head.includes(c.id));
     const groups = [];
     t.rows.forEach((row, i) => {
-      if (filled(row.cells[spec.key]) || !groups.length) groups.push([]);
+      if (spec.starts(row) || !groups.length) groups.push([]);
       groups[groups.length - 1].push({ row, i });
     });
     for (const g of groups) {
@@ -132,6 +133,10 @@ const Sheet = (() => {
       });
       if (addRow) tbody.appendChild(rowEl(langId, t, null, '', ctx, { columns: bodyCols, index: last.i + 1, blankId: 'add-' + g[0].row.id }));
     }
+    if (spec.fromLexicon) {
+      if (!groups.length) tbody.insertAdjacentHTML('beforeend', `<tr class="empty-note"><td colspan="${t.columns.length + 2}">Words get their inflections from the Lexicon: choose New in a word's Inflection column.</td></tr>`);
+      return;
+    }
     const start = rowEl(langId, t, null, t.rows.length + 1, ctx, { columns: headCols, filler: bodyCols.length });
     if (groups.length) start.classList.add('group-start');
     tbody.appendChild(start);
@@ -143,9 +148,9 @@ const Sheet = (() => {
     const spec = GROUPED[t.id];
     const i = t.rows.indexOf(row);
     const next = t.rows[i + 1];
-    if (!filled(row.cells[spec.key]) || !next || filled(next.cells[spec.key])) return Store.deleteRow(langId, t.id, row.id);
+    if (!spec.starts(row) || !next || spec.starts(next)) return Store.deleteRow(langId, t.id, row.id);
     Store.transact('Delete row', () => {
-      spec.head.forEach(c => { if (row.cells[c] !== undefined) Store.updateCell(langId, t.id, next.id, c, row.cells[c]); });
+      spec.move.forEach(c => { if (row.cells[c] !== undefined) Store.updateCell(langId, t.id, next.id, c, row.cells[c]); });
       Store.deleteRow(langId, t.id, row.id);
     });
   }
@@ -170,10 +175,12 @@ const Sheet = (() => {
       const td = document.createElement('td');
       if (g.span?.[col.id] > 1) { td.rowSpan = g.span[col.id]; td.classList.add('group-head'); }
       const type = Store.columnType(t.id, col.id);
-      const value = row ? row.cells[col.id] : undefined;
+      let value = row ? row.cells[col.id] : undefined;
+      // Inflection tab: the word is the Lexicon entry's, shown read-only.
+      const linkedWord = t.id === 'inflections' && col.id === 'word';
+      if (linkedWord && row?.cells.lex) value = ctx.lexiconWord(row.cells.lex) ?? value;
       td.classList.add('c-' + type);
-      if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx));
-      else if (type === 'pos') td.appendChild(posCell(t, row, col, value, write));
+      if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx, linkedWord));
       else if (type === 'posOne') td.appendChild(posSelectCell(t, row, col, value, write));
       else if (type === 'inflection') td.appendChild(inflectionCell(t, row, col, value, write, ctx));
       else if (type === 'diphthong') td.appendChild(diphthongCell(t, row, col, value, write));
@@ -192,9 +199,15 @@ const Sheet = (() => {
     return tr;
   }
 
-  function textCell(t, row, col, value, type, write, ctx) {
+  function textCell(t, row, col, value, type, write, ctx, readOnly = false) {
     const input = document.createElement('input');
     input.value = value || '';
+    input.readOnly = readOnly;
+    if (readOnly && row?.cells.lex) input.dataset.lex = row.cells.lex;
+    if (t.id === 'inflections' && col.id === 'pattern' && row) {
+      const lexWord = row.cells.lex ? ctx.lexiconWord(row.cells.lex) : null;
+      input.placeholder = 'like ' + (lexWord ?? row.cells.word ?? '');
+    }
     input.dataset.col = col.id;
     input.setAttribute('aria-label', col.name);
     input.spellcheck = type === 'text';
@@ -209,7 +222,6 @@ const Sheet = (() => {
       say.hidden = !input.value.trim();
       overlay.scrollLeft = input.scrollLeft;
     };
-    input.addEventListener('change', () => { if (row) ctx.committed?.(t.id, row.id, col.id, input.value); });
     // In grouped tables, the first letter typed into an empty cell redraws the table, so a group's
     // "add a form" row appears (or moves) as soon as its last row gets content.
     let wasEmpty = !input.value;
@@ -322,43 +334,39 @@ const Sheet = (() => {
     return box;
   }
 
-  // Part of speech: a list of tags chosen from the standard parts of speech.
-  function posCell(t, row, col, value, write) {
-    const list = Array.isArray(value) ? value : value ? [value] : [];
-    const b = document.createElement('button');
-    b.className = 'phon pos';
-    b.dataset.col = col.id;
-    b.textContent = list.join(', ');
-    b.setAttribute('aria-label', col.name + (list.length ? ': ' + list.join(', ') : ''));
-    b.addEventListener('keydown', e => moveKey(e, b));
-    b.onclick = () => Picker.openList(b, POS, list, next => write(col.id, next.length ? next : undefined, { focus: {} }));
-    return b;
-  }
-  const TRASH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M3.8 4l.7 9.5h7l.7-9.5M6.5 6.5v4.5M9.5 6.5v4.5"/></svg>';
-  // One part of speech, from a dropdown. Empty means "same as the row above".
-  // Lexicon: which named inflection the word follows. Offers the inflections whose model word shares a part
-  // of speech with this word (all of them if this word has no part of speech yet). Hover shows the forms.
+  // Lexicon: which inflection the word follows. Once the word has a part of speech, offers the inflections
+  // whose model shares it, plus New (which sets one up from Inflection Types). Hover shows the word's forms.
   function inflectionCell(t, row, col, value, write, ctx) {
     const sel = document.createElement('select');
     sel.className = 'pos-select';
     sel.dataset.col = col.id;
     sel.setAttribute('aria-label', col.name);
+    const pos = [].concat(row?.cells.pos || []);
     const fill = () => {
-      const pos = [].concat(row?.cells.pos || []);
       const all = ctx.patterns();
-      const names = [...new Set(all.filter(p => !pos.length || p.pos.some(x => pos.includes(x))).map(p => p.name))];
-      if (value && !names.includes(value)) names.push(value);
-      sel.innerHTML = ['', ...names].map(o => `<option value="${esc(o)}"${o === (value || '') ? ' selected' : ''}>${esc(o)}</option>`).join('');
-      const p = value && row?.cells.word && all.find(x => x.name.toLowerCase() === value.toLowerCase());
-      sel.title = p ? Parse.follow(row.cells.word, p).map(f => `${f.form}: ${f.inflected}`).join('\n') : '';
+      const current = Parse.findPattern(all, value);
+      const options = all.filter(p => p.pos.some(x => pos.includes(x)));
+      if (current && !options.includes(current)) options.push(current);
+      sel.innerHTML = '<option value=""></option>' +
+        options.map(p => `<option value="${esc(p.id)}"${p === current ? ' selected' : ''}>${esc(p.name)}</option>`).join('') +
+        (row && pos.length ? '<option value="__new">New…</option>' : '');
+      sel.title = current && row?.cells.word ? Parse.follow(row.cells.word, current).map(f => `${f.form}: ${f.inflected}`).join('\n')
+        : pos.length ? '' : 'Choose a part of speech first';
     };
     fill();
+    sel.disabled = !pos.length && !value;
     sel.addEventListener('focus', fill);
-    sel.onchange = () => write(col.id, sel.value || undefined, { focus: {} });
+    sel._refresh = fill;
+    sel.onchange = () => {
+      if (sel.value === '__new') ctx.newInflection(row.id);
+      else write(col.id, sel.value || undefined, { focus: {} });
+    };
     return sel;
   }
 
+  // One part of speech, from a dropdown. (Older entries may hold a list; the first one is shown.)
   function posSelectCell(t, row, col, value, write) {
+    if (Array.isArray(value)) value = value[0];
     const sel = document.createElement('select');
     sel.className = 'pos-select';
     sel.dataset.col = col.id;
@@ -369,6 +377,7 @@ const Sheet = (() => {
     sel.onchange = () => write(col.id, sel.value || undefined, { focus: {} });
     return sel;
   }
+  const TRASH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M3.8 4l.7 9.5h7l.7-9.5M6.5 6.5v4.5M9.5 6.5v4.5"/></svg>';
   const POS = ['noun', 'pronoun', 'verb', 'adjective', 'adverb', 'preposition', 'postposition', 'conjunction', 'determiner', 'numeral', 'particle', 'interjection'];
 
   // Enter / arrows move up and down within a column, like a spreadsheet.
@@ -387,8 +396,10 @@ const Sheet = (() => {
 
   // Repaint every word cell's overlay (after the phonology changes).
   function repaintWords(root, ctx) {
+    root.querySelectorAll('select[data-col=inflection]').forEach(s => s._refresh?.());
     root.querySelectorAll('.word').forEach(w => {
       const input = w.querySelector('input');
+      if (input.dataset.lex) input.value = ctx.lexiconWord(input.dataset.lex) ?? input.value;
       const view = document.activeElement === input ? 'text' : viewOf(w.dataset.table, w.dataset.column);
       w.dataset.view = view;
       paintWord(w.querySelector('.word-overlay'), input.value, ctx, !!w.dataset.lexicon, view);

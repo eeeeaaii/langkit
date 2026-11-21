@@ -96,31 +96,28 @@ const ctx = {
   glosses: () => Parse.glosses(Store.language(langId)),
   usage: () => Parse.usage(Store.language(langId)),
   patterns: () => Parse.patterns(Store.language(langId)),
-  // A text cell lost focus with a changed value.
-  committed: (tableId, rowId, colId) => {
-    if (tableId === 'inflections' && colId === 'word') setTimeout(() => fillInflections(rowId));
-  },
+  lexiconWord: id => Store.table(langId, 'lexicon')?.rows.find(r => r.id === id)?.cells.word,
+  newInflection: lexId => newInflection(lexId),
 };
 
-// A word was entered in the Inflection tab: if it starts a group with no forms yet, add one row per form
-// defined in Inflection Types for the word's part(s) of speech in the Lexicon.
-function fillInflections(rowId) {
+// "New" in a Lexicon entry's Inflection dropdown: add the word to the Inflection tab with one row per form
+// that Inflection Types defines for its part(s) of speech, make the entry follow it, and go there to fill it in.
+function newInflection(lexId) {
   const lang = Store.language(langId);
-  const rows = Store.table(langId, 'inflections')?.rows || [];
-  const index = rows.findIndex(r => r.id === rowId);
-  const row = rows[index];
-  const word = (row?.cells.word || '').trim().toLowerCase();
-  if (!word || row.cells.form || row.cells.inflected) return;
-  const next = rows[index + 1];
-  if (next && !(next.cells.word || '').trim()) return; // the word already has rows under it
-  const entry = Store.table(langId, 'lexicon').rows.find(r => (r.cells.word || '').trim().toLowerCase() === word);
-  const pos = [].concat(entry?.cells.pos || []);
+  const entry = Store.table(langId, 'lexicon').rows.find(r => r.id === lexId);
+  if (!entry) return;
+  const pos = [].concat(entry.cells.pos || []);
   const forms = [...new Set(pos.flatMap(p => Parse.inflectionForms(lang, p)))];
-  if (!forms.length) return;
-  Store.transact('Add inflections', () => {
-    Store.updateCell(langId, 'inflections', rowId, 'form', forms[0]);
-    Store.insertRows(langId, 'inflections', index + 1, forms.slice(1).map(form => ({ form })));
-  });
+  const id = Math.random().toString(36).slice(2, 10);
+  const first = { lex: lexId, word: entry.cells.word || '' };
+  if (forms[0]) first.form = forms[0];
+  showTab('inflection');
+  Store.transact('New inflection', () => {
+    const end = Store.table(langId, 'inflections').rows.length;
+    Store.addRow(langId, 'inflections', first, { id });
+    Store.insertRows(langId, 'inflections', end + 1, forms.slice(1).map(form => ({ form })));
+    Store.updateCell(langId, 'lexicon', lexId, 'inflection', id);
+  }, { meta: { focus: { table: 'inflections', row: id, col: 'inflected' } } });
 }
 function renderLanguage() {
   Sheet.render($('#phrases-table'), langId, 'phrases', ctx);

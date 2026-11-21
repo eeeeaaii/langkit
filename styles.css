@@ -164,3 +164,7 @@ td.group-head { vertical-align:top; background:var(--bg); }
 tr.group-start > td { border-top:2px solid color-mix(in srgb, var(--fg) 25%, transparent); }
 tr.blank.add td:not(.num):not(.act) { background:color-mix(in srgb, var(--bg) 50%, transparent); }
 td.filler { background:var(--bg); }
+
+tr.empty-note td { padding:10px 8px; color:var(--muted); font-style:italic; }
+td input[readonly] { cursor:default; }
+td select.pos-select:disabled { cursor:default; }
