@@ -84,3 +84,16 @@ button.ipa-cell.current { background:var(--accent); color:#fff; }
 .ipa-group button.ipa-cell { width:auto; padding:0 4px; border:1px solid var(--line); }
 .ipa-chart.vowels td { width:34px; height:30px; }
 .ipa-note { color:var(--muted); font-size:11px; margin:6px 0 0; }
+
+/* While a sound plays: tint the symbol and show a speaker icon in its corner. */
+.playing { position:relative; background:color-mix(in srgb, var(--accent) 22%, transparent) !important; }
+.playing::after {
+  content:""; position:absolute; top:2px; right:2px; width:11px; height:11px; background:var(--accent);
+  -webkit-mask:var(--speaker) center/contain no-repeat; mask:var(--speaker) center/contain no-repeat;
+  animation:pulse .7s ease-in-out infinite alternate;
+}
+:root { --speaker:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9v6h4l5 4V5L7 9H3z'/%3E%3Cpath d='M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+@keyframes pulse { from { opacity:.45; } to { opacity:1; } }
+@media (prefers-reduced-motion: reduce) { .playing::after { animation:none; } }
+.phon.playing::after, .phon-multi.playing::after, .phon-part.playing::after { top:50%; right:6px; width:14px; height:14px; margin-top:-7px; }
+.phon-part.playing::after { right:-14px; }

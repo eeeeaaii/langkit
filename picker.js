@@ -58,7 +58,7 @@ const Picker = (() => {
     });
     el.addEventListener('contextmenu', e => {
       const b = e.target.closest('[data-sym]');
-      if (b) { e.preventDefault(); Sound.play(b.dataset.sym); }
+      if (b) { e.preventDefault(); Sound.play(b.dataset.sym, b); }
     });
 
     // Place below the cell, kept inside the window.
