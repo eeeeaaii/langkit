@@ -53,7 +53,9 @@ th[data-col="notes"] { width:40%; }
 /* The parse underlines are drawn as 2px bars on the spans (a background stripe), not CSS text underlines,
    so their thickness and spacing are exact in every browser and they never collide.
    Inline padding and backgrounds don't change text layout, so the overlay stays aligned with the input. */
-.word-overlay .unknown { color:var(--nophoneme-text); background:linear-gradient(var(--nophoneme), var(--nophoneme)) left bottom / 100% 2px no-repeat; }
+/* Letter line: 2px below the bottom of the glyph box, so it clears descenders (g, j, p, q, y).
+   The group is padded 1px on each side, with matching negative margins so the text doesn't move. */
+.word-overlay .unknown { color:var(--nophoneme-text); padding:0 1px 2px; margin:0 -1px; background:linear-gradient(var(--nophoneme), var(--nophoneme)) left bottom / 100% 2px no-repeat; }
 
 /* Phoneme cells */
 .phon { width:100%; min-height:24px; border:0; border-radius:0; background:none; text-align:left; padding:2px 6px; font:inherit; color:var(--fg); }
@@ -106,10 +108,10 @@ button.ipa-cell.current { background:var(--accent); color:#fff; }
 table.grid th { white-space:nowrap; }
 
 /* Letters with no phoneme: yellow-green. Words not in the lexicon: reddish-orange. Both lines are 2px. */
-:root { --nophoneme:#94c100; --nophoneme-text:#5c7a00; --missing:#f0531c; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --nophoneme:#b5e61d; --nophoneme-text:#c6ef4a; --missing:#ff7a45; } }
-:root[data-theme="dark"] { --nophoneme:#b5e61d; --nophoneme-text:#c6ef4a; --missing:#ff7a45; }
-.word-overlay .missing { padding-bottom:4px; background:linear-gradient(var(--missing), var(--missing)) left bottom / 100% 2px no-repeat; }
+:root { --nophoneme:#f0531c; --nophoneme-text:#c23a0c; --missing:#8e44d6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --nophoneme:#ff7a45; --nophoneme-text:#ff9a70; --missing:#b57bf0; } }
+:root[data-theme="dark"] { --nophoneme:#ff7a45; --nophoneme-text:#ff9a70; --missing:#b57bf0; }
+.word-overlay .missing { padding-bottom:6px; background:linear-gradient(var(--missing), var(--missing)) left bottom / 100% 2px no-repeat; }
 
 /* Part of speech multiselect */
 .pos { white-space:normal; }
