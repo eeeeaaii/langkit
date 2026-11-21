@@ -40,7 +40,7 @@ const Store = (() => {
   }
 
   let db = load();
-  const save = () => localStorage.setItem(KEY, JSON.stringify(db));
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} };
 
   const language = id => db.languages.find(l => l.id === id);
   const table = (langId, tableId = 'phrases') => language(langId)?.tables.find(t => t.id === tableId);

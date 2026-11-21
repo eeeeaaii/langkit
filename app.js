@@ -2,9 +2,9 @@ const $ = s => document.querySelector(s);
 const thead = $('#sheet thead'), tbody = $('#sheet tbody');
 let langId = null;
 
-// ---- Routing: "#" is the home screen, "#/lang/<id>" is a language's sheet ----
+// ---- Routing: "#" is the home screen, "#lang-<id>" is a language's sheet ----
 function route() {
-  const m = location.hash.match(/^#\/lang\/(\w+)/);
+  const m = location.hash.match(/^#lang-(\w+)$/);
   langId = m && Store.language(m[1]) ? m[1] : null;
   $('#home').hidden = !!langId;
   $('#sheet-view').hidden = !langId;
@@ -30,9 +30,15 @@ function renderHome() {
   langs.forEach(lang => {
     const li = document.createElement('li');
     const n = lang.tables[0].rows.length;
-    li.innerHTML = `<a href="#/lang/${lang.id}">${esc(lang.name)}</a><span class="muted">${n} ${n === 1 ? 'entry' : 'entries'}</span><button class="link" title="Delete language">Delete</button>`;
-    li.querySelector('button').onclick = () => {
-      if (confirm(`Delete ${lang.name} and all its entries?`)) { Store.deleteLanguage(lang.id); renderHome(); }
+    li.innerHTML = `<a href="#lang-${lang.id}">${esc(lang.name)}</a><span class="muted">${n} ${n === 1 ? 'entry' : 'entries'}</span><button class="link" title="Delete language">Delete</button>`;
+    // Two-step delete in the page itself (embedded viewers block confirm() dialogs).
+    const btn = li.querySelector('button');
+    btn.onclick = () => {
+      if (btn.dataset.armed) { Store.deleteLanguage(lang.id); renderHome(); return; }
+      btn.dataset.armed = '1';
+      btn.textContent = `Delete ${lang.name} and all entries?`;
+      btn.classList.add('danger');
+      setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Delete'; btn.classList.remove('danger'); } }, 4000);
     };
     $('#lang-list').appendChild(li);
   });
@@ -44,7 +50,7 @@ $('#create-form').onsubmit = e => {
   const name = $('#lang-name').value.trim();
   if (!name) return;
   $('#lang-name').value = '';
-  location.hash = '#/lang/' + Store.createLanguage(name).id;
+  location.hash = '#lang-' + Store.createLanguage(name).id;
 };
 
 // ---- Sheet: one row per entry, plus an always-empty row at the bottom ----
@@ -110,6 +116,14 @@ function onKey(e, tr, col) {
   target?.querySelector(`input[data-col="${col}"]`)?.focus();
 }
 
+function flash(msg) {
+  const el = $('#flash');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(flash.t);
+  flash.t = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 $('#search').oninput = () => renderSheet();
@@ -123,7 +137,7 @@ $('#import').onchange = async e => {
   const file = e.target.files[0];
   if (!file) return;
   try { Store.importJSON(await file.text()); location.hash = ''; route(); }
-  catch (err) { alert('Import failed: ' + err.message); }
+  catch (err) { flash('Import failed: ' + err.message); }
   e.target.value = '';
 };
 
