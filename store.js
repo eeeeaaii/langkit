@@ -21,7 +21,7 @@ const Store = (() => {
   const SCHEMA = [
     { id: 'phrases', name: 'Phrases', columns: lang => [
       { id: 'english', name: 'English', type: 'text' },
-      { id: 'conlang', name: lang.name, type: 'word' },
+      { id: 'conlang', name: lang.name, type: 'phrase' },
       { id: 'notes', name: 'Notes', type: 'text' },
     ] },
     { id: 'consonants', name: 'Consonants', columns: () => [
@@ -37,7 +37,7 @@ const Store = (() => {
     { id: 'lexicon', name: 'Lexicon', columns: () => [
       { id: 'word', name: 'Word', type: 'word' },
       { id: 'english', name: 'English', type: 'text' },
-      { id: 'pos', name: 'Part of Speech', type: 'text' },
+      { id: 'pos', name: 'Part of Speech', type: 'pos' },
       { id: 'note', name: 'Note', type: 'text' },
       { id: 'sentence', name: 'In a Sentence', type: 'word' },
       { id: 'sentenceTranslation', name: 'Sentence Translation', type: 'text' },

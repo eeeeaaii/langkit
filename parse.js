@@ -39,5 +39,17 @@ const Parse = (() => {
     return out;
   }
 
-  return { inventory, segment };
+  // Every word in the Lexicon's Word column, lowercased.
+  function lexicon(lang) {
+    const t = lang.tables.find(x => x.id === 'lexicon');
+    return new Set((t?.rows || []).map(r => (r.cells.word || '').trim().toLowerCase()).filter(Boolean));
+  }
+
+  // Split text into words and the separators between them. Apostrophes and hyphens stay inside words.
+  const SEPARATOR = /([\s.,!?;:"“”()\[\]{}…«»¿¡]+)/u;
+  function words(text) {
+    return text.split(SEPARATOR).filter(s => s !== '').map(s => ({ text: s, word: !SEPARATOR.test(s) }));
+  }
+
+  return { inventory, segment, lexicon, words };
 })();
