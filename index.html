@@ -26,10 +26,19 @@
   </main>
 
   <main id="sheet-view" hidden>
-    <table id="sheet">
-      <thead></thead>
-      <tbody></tbody>
-    </table>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="phrases">Phrases</button>
+      <button role="tab" data-tab="phonology">Phonology</button>
+      <button role="tab" data-tab="lexicon">Lexicon</button>
+    </nav>
+    <section id="tab-phrases" class="tab-panel" role="tabpanel">
+      <table id="sheet">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+    <section id="tab-phonology" class="tab-panel" role="tabpanel" hidden></section>
+    <section id="tab-lexicon" class="tab-panel" role="tabpanel" hidden></section>
   </main>
 
   <script src="store.js"></script>
