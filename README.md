@@ -9,7 +9,7 @@ There is always an empty row at the bottom; start typing in it to add an entry.
 
 No build step or install. Open `index.html` in a browser (double-click it, or serve the folder with any static server).
 
-Data is saved in the browser's localStorage. Use **Export** / **Import** to back it up or move it to another browser.
+Data is saved in the browser's localStorage.
 
 ## Code
 

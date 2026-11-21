@@ -74,12 +74,5 @@ const Store = (() => {
       t.rows = t.rows.filter(r => r.id !== rowId);
       save();
     },
-    exportJSON: () => JSON.stringify(db, null, 2),
-    importJSON(text) {
-      const data = JSON.parse(text);
-      if (!data || !Array.isArray(data.languages)) throw new Error('Not a LangKit file');
-      db = data;
-      save();
-    },
   };
 })();
