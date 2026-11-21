@@ -112,3 +112,5 @@ table.grid th { white-space:nowrap; }
 .pos { white-space:normal; }
 .list-popup { display:flex; flex-direction:column; gap:2px; padding:6px 10px; min-width:160px; }
 .list-popup label { display:flex; gap:6px; align-items:center; padding:2px 0; cursor:pointer; }
+/* Word cells get extra room at the bottom so the pink lexicon underline stays clear of the focus outline. */
+td .word input, td .word .word-overlay { padding-bottom:6px; }
