@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LangKit</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>LangKit</h1>
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search phrases…" aria-label="Search">
+      <button id="add-row" class="primary">+ Add row</button>
+      <button id="export">Export</button>
+      <label class="button">Import<input id="import" type="file" accept=".json" hidden></label>
+    </div>
+  </header>
+  <main>
+    <table id="sheet">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+    <p id="empty" hidden>No rows yet. Click <b>+ Add row</b> to start your lexicon.</p>
+    <p id="status"></p>
+  </main>
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
