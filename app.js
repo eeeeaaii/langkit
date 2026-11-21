@@ -95,6 +95,7 @@ const ctx = {
   lexicon: () => Parse.lexicon(Store.language(langId)),
   glosses: () => Parse.glosses(Store.language(langId)),
   usage: () => Parse.usage(Store.language(langId)),
+  patterns: () => Parse.patterns(Store.language(langId)),
   // A text cell lost focus with a changed value.
   committed: (tableId, rowId, colId) => {
     if (tableId === 'inflections' && colId === 'word') setTimeout(() => fillInflections(rowId));
