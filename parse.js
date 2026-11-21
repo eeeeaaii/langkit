@@ -45,11 +45,25 @@ const Parse = (() => {
     return new Set((t?.rows || []).map(r => (r.cells.word || '').trim().toLowerCase()).filter(Boolean));
   }
 
+  // Every lexicon word mapped to its literal English: the first definition (before a comma),
+  // cut at the first character that isn't a letter, apostrophe, space or hyphen.
+  // So "doorway, portal" gives "doorway" and "door+ ugh way, portal" gives "door".
+  function glosses(lang) {
+    const t = lang.tables.find(x => x.id === 'lexicon');
+    const map = new Map();
+    for (const r of t?.rows || []) {
+      const word = (r.cells.word || '').trim().toLowerCase();
+      const gloss = ((r.cells.english || '').split(',')[0].match(/^[A-Za-z' -]*/)[0]).trim();
+      if (word && gloss && !map.has(word)) map.set(word, gloss);
+    }
+    return map;
+  }
+
   // Split text into words and the separators between them. Apostrophes and hyphens stay inside words.
   const SEPARATOR = /([\s.,!?;:"“”()\[\]{}…«»¿¡]+)/u;
   function words(text) {
     return text.split(SEPARATOR).filter(s => s !== '').map(s => ({ text: s, word: !SEPARATOR.test(s) }));
   }
 
-  return { inventory, segment, lexicon, words };
+  return { inventory, segment, lexicon, glosses, words };
 })();
