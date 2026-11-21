@@ -32,16 +32,25 @@
       <button role="tab" data-tab="lexicon">Lexicon</button>
     </nav>
     <section id="tab-phrases" class="tab-panel" role="tabpanel">
-      <table id="sheet">
-        <thead></thead>
-        <tbody></tbody>
-      </table>
+      <div id="phrases-table"></div>
     </section>
-    <section id="tab-phonology" class="tab-panel" role="tabpanel" hidden></section>
+    <section id="tab-phonology" class="tab-panel" role="tabpanel" hidden>
+      <h3>Consonants</h3>
+      <div id="consonants-table"></div>
+      <h3>Vowels</h3>
+      <div id="vowels-table"></div>
+      <h3>Diphthongs</h3>
+      <div id="diphthongs-table"></div>
+    </section>
     <section id="tab-lexicon" class="tab-panel" role="tabpanel" hidden></section>
   </main>
 
   <script src="store.js"></script>
+  <script src="ipa.js"></script>
+  <script src="audio.js"></script>
+  <script src="parse.js"></script>
+  <script src="picker.js"></script>
+  <script src="sheet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
