@@ -82,7 +82,7 @@ th[data-col="notes"] { width:40%; }
 .ipa-cell.impossible { background:var(--line); }
 button.ipa-cell { border:0; border-radius:0; padding:0; background:none; font-size:17px; line-height:26px; color:var(--fg); font-family:"Charis SIL","Doulos SIL","Gentium Plus","Noto Sans",system-ui,sans-serif; }
 button.ipa-cell:hover, button.ipa-cell:focus-visible { background:var(--hover); outline:none; }
-button.ipa-cell.current { background:var(--accent); color:#fff; }
+button.ipa-cell.current { background:var(--accent); color:var(--cell); }
 .ipa-others { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:8px; }
 .ipa-group { display:flex; align-items:center; gap:2px; }
 .ipa-group-name { color:var(--muted); font-size:11px; margin-right:4px; }
@@ -107,7 +107,7 @@ button.ipa-cell.current { background:var(--accent); color:#fff; }
 #tab-lexicon th[data-col="pos"] { width:9%; }
 table.grid th { white-space:nowrap; }
 
-/* Letters with no phoneme: yellow-green. Words not in the lexicon: reddish-orange. Both lines are 2px. */
+/* Letters with no phoneme: reddish-orange. Words not in the lexicon: purple. Both lines are 2px. */
 :root { --nophoneme:#f0531c; --nophoneme-text:#c23a0c; --missing:#8e44d6; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --nophoneme:#ff7a45; --nophoneme-text:#ff9a70; --missing:#b57bf0; } }
 :root[data-theme="dark"] { --nophoneme:#ff7a45; --nophoneme-text:#ff9a70; --missing:#b57bf0; }
@@ -119,3 +119,11 @@ table.grid th { white-space:nowrap; }
 .list-popup label { display:flex; gap:6px; align-items:center; padding:2px 0; cursor:pointer; }
 /* Word cells get extra room at the bottom so the lexicon underline stays clear of the focus outline. */
 td .word input, td .word .word-overlay { padding-bottom:6px; }
+
+/* Text / IPA / Literal switch in the header of columns written in the language. */
+.view-toggle { display:inline-flex; margin-left:8px; vertical-align:1px; border:1px solid var(--line); border-radius:4px; overflow:hidden; }
+.view-toggle button { font:inherit; font-size:11px; font-weight:500; padding:0 5px; line-height:16px; border:0; border-radius:0; background:transparent; color:var(--muted, inherit); cursor:pointer; }
+.view-toggle button + button { border-left:1px solid var(--line); }
+.view-toggle button[aria-pressed="true"] { background:var(--accent); color:var(--cell); }
+/* In IPA and Literal views the painted text no longer matches the typed text, so hide the caret until the cell is edited. */
+.word[data-view="ipa"] input, .word[data-view="literal"] input { caret-color:transparent; }

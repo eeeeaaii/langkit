@@ -93,6 +93,7 @@ $('#create-form').onsubmit = e => {
 const ctx = {
   inventory: () => Parse.inventory(Store.language(langId)),
   lexicon: () => Parse.lexicon(Store.language(langId)),
+  glosses: () => Parse.glosses(Store.language(langId)),
 };
 function renderLanguage() {
   Sheet.render($('#phrases-table'), langId, 'phrases', ctx);

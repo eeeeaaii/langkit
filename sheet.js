@@ -18,7 +18,34 @@ const Sheet = (() => {
     flush();
     return html;
   };
-  function paintWord(overlay, text, ctx, checkLexicon) {
+  // How each target-language column is shown: 'text' (as typed), 'ipa' or 'literal'.
+  // Kept per table and column for this visit; the cell being edited always shows the typed text.
+  const views = new Map();
+  const VIEWS = [['text', 'Text', 'Show the words as written'], ['ipa', 'IPA', 'Show the words in IPA'], ['literal', 'Literal', 'Show each word\'s English equivalent']];
+  const viewOf = (tableId, colId) => views.get(tableId + ':' + colId) || 'text';
+
+  // IPA: each spelling replaced by its phoneme; letters with no phoneme stay as typed and marked.
+  const ipa = (text, inventory) => {
+    let html = '', run = '';
+    const flush = () => { if (run) html += `<span class="unknown">${esc(run)}</span>`; run = ''; };
+    for (const s of Parse.segment(text, inventory)) {
+      if (s.unknown) { run += s.text; continue; }
+      flush();
+      html += esc(s.ipa || s.text);
+    }
+    flush();
+    return html;
+  };
+  // Literal: each word replaced by its English from the lexicon; words not in the lexicon stay as typed and marked.
+  const literal = (text, glosses) => Parse.words(text).map(w => {
+    if (!w.word) return esc(w.text);
+    const g = glosses.get(w.text.toLowerCase());
+    return g ? esc(g) : `<span class="missing" title="Not in the lexicon">${esc(w.text)}</span>`;
+  }).join('');
+
+  function paintWord(overlay, text, ctx, checkLexicon, view = 'text') {
+    if (view === 'ipa') { overlay.innerHTML = text.trim() ? '/' + ipa(text, ctx.inventory()) + '/' : ''; return; }
+    if (view === 'literal') { overlay.innerHTML = literal(text, ctx.glosses()); return; }
     const inventory = ctx.inventory();
     if (!checkLexicon) { overlay.innerHTML = letters(text, inventory); return; }
     const lexicon = ctx.lexicon();
@@ -35,12 +62,27 @@ const Sheet = (() => {
     table.className = 'grid';
     table.dataset.table = tableId;
     table.innerHTML = '<thead><tr><th class="num">#</th>' +
-      t.columns.map(c => `<th data-col="${c.id}">${esc(c.name)}</th>`).join('') + '<th class="act"></th></tr></thead>';
+      t.columns.map(c => `<th data-col="${c.id}">${esc(c.name)}${viewToggle(tableId, c.id)}</th>`).join('') + '<th class="act"></th></tr></thead>';
+    table.querySelectorAll('.view-toggle button').forEach(b => b.onclick = () => {
+      const th = b.closest('th');
+      views.set(tableId + ':' + th.dataset.col, b.dataset.view);
+      th.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      repaintWords(table, ctx);
+    });
     const tbody = document.createElement('tbody');
     t.rows.forEach((row, i) => tbody.appendChild(rowEl(langId, t, row, i + 1, ctx)));
     tbody.appendChild(rowEl(langId, t, null, t.rows.length + 1, ctx));
     table.appendChild(tbody);
     container.replaceChildren(table);
+  }
+
+  // Text / IPA / Literal switch, only on columns written in the language.
+  function viewToggle(tableId, colId) {
+    const type = Store.columnType(tableId, colId);
+    if (type !== 'word' && type !== 'phrase') return '';
+    const cur = viewOf(tableId, colId);
+    return '<span class="view-toggle" role="group" aria-label="Show as">' + VIEWS.map(([v, label, title]) =>
+      `<button type="button" data-view="${v}" title="${title}" aria-pressed="${v === cur}" tabindex="-1">${label}</button>`).join('') + '</span>';
   }
 
   function rowEl(langId, t, row, num, ctx) {
@@ -86,14 +128,22 @@ const Sheet = (() => {
     input.setAttribute('aria-label', col.name);
     input.spellcheck = type === 'text';
     input.addEventListener('keydown', e => moveKey(e, input));
-    let overlay = null;
-    const repaint = () => { if (overlay) { paintWord(overlay, input.value, ctx, type === 'phrase'); overlay.scrollLeft = input.scrollLeft; } };
+    let overlay = null, wrap = null;
+    const repaint = () => {
+      if (!overlay) return;
+      const view = document.activeElement === input ? 'text' : viewOf(t.id, col.id);
+      wrap.dataset.view = view;
+      paintWord(overlay, input.value, ctx, type === 'phrase', view);
+      overlay.scrollLeft = input.scrollLeft;
+    };
     input.addEventListener('input', () => {
       repaint();
       write(col.id, input.value, { silent: !!row, coalesce: row ? `${t.id}:${row.id}:${col.id}` : undefined, focus: { caret: input.selectionStart } });
     });
     if (type === 'text') return input;
-    const wrap = document.createElement('div');
+    wrap = document.createElement('div');
+    wrap.dataset.table = t.id;
+    wrap.dataset.col = col.id;
     wrap.className = 'word';
     if (type === 'phrase') wrap.dataset.lexicon = '1';
     overlay = document.createElement('div');
@@ -101,6 +151,8 @@ const Sheet = (() => {
     overlay.setAttribute('aria-hidden', 'true');
     wrap.append(overlay, input);
     input.addEventListener('scroll', repaint);
+    input.addEventListener('focus', repaint);
+    input.addEventListener('blur', repaint);
     input.addEventListener('keyup', () => { overlay.scrollLeft = input.scrollLeft; });
     repaint();
     return wrap;
@@ -195,7 +247,12 @@ const Sheet = (() => {
 
   // Repaint every word cell's overlay (after the phonology changes).
   function repaintWords(root, ctx) {
-    root.querySelectorAll('.word').forEach(w => paintWord(w.querySelector('.word-overlay'), w.querySelector('input').value, ctx, !!w.dataset.lexicon));
+    root.querySelectorAll('.word').forEach(w => {
+      const input = w.querySelector('input');
+      const view = document.activeElement === input ? 'text' : viewOf(w.dataset.table, w.dataset.col);
+      w.dataset.view = view;
+      paintWord(w.querySelector('.word-overlay'), input.value, ctx, !!w.dataset.lexicon, view);
+    });
   }
 
   return { render, repaintWords, esc };
