@@ -69,6 +69,7 @@ const Sheet = (() => {
   }
 
   function render(container, langId, tableId, ctx) {
+    if (tableId === 'inflectionTypes') return renderLayers(container, langId, ctx);
     const t = Store.table(langId, tableId);
     const table = document.createElement('table');
     table.className = 'grid';
@@ -91,6 +92,131 @@ const Sheet = (() => {
     container.replaceChildren(table);
   }
 
+  // Inflection Types: each part of speech is a tree of layers, drawn left to right. An item's → button starts
+  // a new layer under it; the empty cell at the bottom of each list adds another item to that list.
+  // An item spans the rows of everything under it, like merged cells in a spreadsheet.
+  function renderLayers(container, langId, ctx) {
+    const T = 'inflectionTypes';
+    const rows = Store.table(langId, T).rows;
+    const kids = id => rows.filter(r => (r.cells.parent || '') === id);
+    const depthOf = id => { const k = kids(id); return k.length ? 1 + Math.max(...k.map(r => depthOf(r.id))) : 0; };
+    const roots = kids('');
+    // Columns: part of speech, then one per layer, plus one more so the deepest items' lists have room to grow.
+    const cols = 1 + Math.max(1, ...roots.map(r => depthOf(r.id))) + 0;
+    const height = id => { const k = kids(id); return k.length ? k.reduce((n, r) => n + height(r.id), 0) + 1 : 1; };
+
+    const table = document.createElement('table');
+    table.className = 'grid layers';
+    table.dataset.table = T;
+    table.innerHTML = '<thead><tr><th>Part of Speech</th>' + Array.from({ length: cols - 1 }, (_, i) => `<th>Layer ${i + 1}</th>`).join('') + '<th class="act"></th></tr></thead>';
+    const tbody = document.createElement('tbody');
+    const lines = []; // one array of cells per table row
+    const line = i => (lines[i] ||= []);
+
+    const newId = () => Math.random().toString(36).slice(2, 10);
+    const add = (parent, label, focusCol = 'label') => {
+      const id = newId();
+      Store.addRow(langId, T, { parent, label }, { id, coalesce: `${T}:${id}:label`, meta: { focus: { table: T, row: id, col: focusCol } } });
+      return id;
+    };
+    const remove = node => {
+      const all = [];
+      const collect = id => { all.push(id); kids(id).forEach(k => collect(k.id)); };
+      collect(node.id);
+      Store.transact('Delete', () => all.reverse().forEach(id => Store.deleteRow(langId, T, id)));
+    };
+
+    // An item: its label (a part of speech dropdown at the first level), its → button if it has no layer yet, and delete.
+    const itemCell = (node, depth, r) => {
+      const td = document.createElement('td');
+      td.className = 'layer-item' + (depth === 0 ? ' layer-root' : '');
+      td.dataset.row = node.id;
+      const h = height(node.id);
+      const leaf = !kids(node.id).length;
+      td.rowSpan = h;
+      if (leaf) td.colSpan = cols - depth;
+      const box = document.createElement('div');
+      box.className = 'layer-box';
+      box.appendChild(depth === 0 ? posField(node.cells.label, v => Store.updateCell(langId, T, node.id, 'label', v || '', { focus: {} }))
+        : labelField(node.cells.label, v => Store.updateCell(langId, T, node.id, 'label', v, { silent: true, coalesce: `${T}:${node.id}:label` })));
+      if (leaf) {
+        const next = document.createElement('button');
+        next.className = 'layer-next';
+        next.textContent = '→';
+        next.title = 'Add a layer under this';
+        next.tabIndex = -1;
+        next.onclick = () => add(node.id, '');
+        box.appendChild(next);
+      }
+      const del = document.createElement('button');
+      del.className = 'layer-del';
+      del.innerHTML = TRASH;
+      del.title = depth === 0 ? 'Delete this part of speech and its layers' : 'Delete this and everything under it';
+      del.tabIndex = -1;
+      del.onclick = () => remove(node);
+      box.appendChild(del);
+      td.appendChild(box);
+      line(r).push(td);
+    };
+    // The empty cell at the bottom of a list: typing (or choosing) there adds an item to the list.
+    const addCell = (parent, depth, r) => {
+      const td = document.createElement('td');
+      td.className = 'layer-add';
+      td.dataset.row = 'add-' + (parent || 'root');
+      td.colSpan = cols - depth;
+      let created = null;
+      td.appendChild(depth === 0
+        ? posField('', v => { if (v) add('', v); }, 'Add a part of speech…')
+        : labelField('', v => {
+          if (created) return Store.updateCell(langId, T, created, 'label', v, { silent: true, coalesce: `${T}:${created}:label` });
+          created = add(parent, v);
+        }, depth === 1 ? 'Add a value…' : 'Add…'));
+      line(r).push(td);
+    };
+
+    // Lay out a list of items starting at row r, at the given depth; returns the row after it.
+    const layout = (parent, depth, r) => {
+      for (const node of kids(parent)) {
+        itemCell(node, depth, r);
+        if (kids(node.id).length) layout(node.id, depth + 1, r);
+        r += height(node.id);
+      }
+      addCell(parent, depth, r);
+      return r + 1;
+    };
+    const total = layout('', 0, 0);
+    for (let i = 0; i < total; i++) {
+      const tr = document.createElement('tr');
+      if (lines[i]?.some(td => td.classList.contains('layer-root')) || (i === total - 1 && i > 0)) tr.className = 'group-start';
+      if (i === total - 1) tr.classList.add('blank');
+      (lines[i] || []).forEach(td => tr.appendChild(td));
+      tr.insertAdjacentHTML('beforeend', '<td class="act"></td>');
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    container.replaceChildren(table);
+  }
+  function labelField(value, onInput, placeholder = '') {
+    const input = document.createElement('input');
+    input.value = value || '';
+    input.dataset.col = 'label';
+    input.placeholder = placeholder;
+    input.setAttribute('aria-label', 'Value');
+    input.addEventListener('input', () => onInput(input.value));
+    return input;
+  }
+  function posField(value, onChange, emptyLabel = '') {
+    const sel = document.createElement('select');
+    sel.className = 'pos-select';
+    sel.dataset.col = 'label';
+    sel.setAttribute('aria-label', 'Part of speech');
+    const options = ['', ...POS];
+    if (value && !POS.includes(value)) options.push(value);
+    sel.innerHTML = options.map(o => `<option value="${esc(o)}"${o === (value || '') ? ' selected' : ''}>${esc(o || emptyLabel)}</option>`).join('');
+    sel.onchange = () => onChange(sel.value);
+    return sel;
+  }
+
   // Text / IPA / Literal switch, only on columns written in the language.
   function viewToggle(tableId, colId) {
     const type = Store.columnType(tableId, colId);
@@ -107,7 +233,6 @@ const Sheet = (() => {
   // Words come into the Inflection tab from the Lexicon (its Inflection dropdown), so it has no row for starting one.
   const filled = v => Array.isArray(v) ? v.length > 0 : !!(v && String(v).trim());
   const GROUPED = {
-    inflectionTypes: { starts: r => filled(r.cells.pos), head: ['pos'], move: ['pos'] },
     inflections: { starts: r => filled(r.cells.word) || filled(r.cells.lex), head: ['word', 'pattern'], move: ['lex', 'word', 'pattern'], fromLexicon: true },
   };
 

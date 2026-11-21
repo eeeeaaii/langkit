@@ -124,10 +124,22 @@ const Parse = (() => {
   }
 
   // The forms defined for a part of speech in Inflection Types (matched ignoring case).
+  // Each form is a path through the part of speech's layers, named by its items in order,
+  // e.g. "indicative present 1st singular".
   function inflectionForms(lang, pos) {
-    const t = lang.tables.find(x => x.id === 'inflectionTypes');
-    const g = groups(t?.rows || [], 'pos').find(x => x.key.toLowerCase() === pos.toLowerCase());
-    return g ? g.rows.map(({ row }) => (row.cells.form || '').trim()).filter(Boolean) : [];
+    const rows = lang.tables.find(x => x.id === 'inflectionTypes')?.rows || [];
+    const kids = id => rows.filter(r => (r.cells.parent || '') === id);
+    const out = [];
+    const walk = (node, path) => {
+      const label = (node.cells.label || '').trim();
+      const here = label ? [...path, label] : path;
+      const under = kids(node.id);
+      if (!under.length) { if (here.length) out.push(here.join(' ')); return; }
+      under.forEach(k => walk(k, here));
+    };
+    kids('').filter(r => (r.cells.label || '').trim().toLowerCase() === pos.toLowerCase())
+      .forEach(root => kids(root.id).forEach(k => walk(k, [])));
+    return out;
   }
 
   // Every lexicon word that a written word stands for: itself, or the base word of an inflected form.

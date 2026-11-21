@@ -168,3 +168,17 @@ td.filler { background:var(--bg); }
 tr.empty-note td { padding:10px 8px; color:var(--muted); font-style:italic; }
 td input[readonly] { cursor:default; }
 td select.pos-select:disabled { cursor:default; }
+
+/* Inflection Types: layers drawn left to right; each item spans everything under it. */
+table.layers td.layer-item, table.layers td.layer-add { vertical-align:top; }
+table.layers td.layer-add input::placeholder { color:var(--muted); font-style:italic; }
+table.layers td.layer-add { background:color-mix(in srgb, var(--bg) 50%, transparent); }
+.layer-box { display:flex; align-items:center; }
+.layer-box > input, .layer-box > select { flex:1; min-width:0; }
+.layer-next, .layer-del { flex:none; border:0; background:none; color:var(--muted); cursor:pointer; border-radius:4px; padding:2px 5px; line-height:1; }
+.layer-next { font-size:15px; }
+.layer-next:hover { color:#fff; background:var(--accent); }
+.layer-del { display:inline-flex; visibility:hidden; }
+td.layer-item:hover > .layer-box > .layer-del, .layer-del:focus-visible { visibility:visible; }
+.layer-del:hover { color:#fff; background:#e03131; }
+table.layers td.layer-add select { color:var(--muted); font-style:italic; }
