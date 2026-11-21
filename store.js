@@ -258,7 +258,7 @@ const Store = (() => {
     },
     addRow(langId, tableId, cells = {}, opts = {}) {
       const row = { id: opts.id || uid(), cells };
-      transact('Add row', () => record({ t: 'insert', path: [...tablePath(langId, tableId), 'rows'], value: row }), opts);
+      transact('Add row', () => record({ t: 'insert', path: [...tablePath(langId, tableId), 'rows'], index: opts.index, value: row }), opts);
       return row;
     },
     updateCell(langId, tableId, rowId, colId, value, opts = {}) {

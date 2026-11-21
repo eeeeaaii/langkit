@@ -82,8 +82,11 @@ const Sheet = (() => {
       repaintWords(table, ctx);
     });
     const tbody = document.createElement('tbody');
-    t.rows.forEach((row, i) => tbody.appendChild(rowEl(langId, t, row, i + 1, ctx)));
-    tbody.appendChild(rowEl(langId, t, null, t.rows.length + 1, ctx));
+    if (GROUPED[tableId]) renderGroups(tbody, langId, t, ctx);
+    else {
+      t.rows.forEach((row, i) => tbody.appendChild(rowEl(langId, t, row, i + 1, ctx)));
+      tbody.appendChild(rowEl(langId, t, null, t.rows.length + 1, ctx));
+    }
     table.appendChild(tbody);
     container.replaceChildren(table);
   }
@@ -97,10 +100,62 @@ const Sheet = (() => {
       `<button type="button" data-view="${v}" title="${title}" aria-pressed="${v === cur}" tabindex="-1">${label}</button>`).join('') + '</span>';
   }
 
-  function rowEl(langId, t, row, num, ctx) {
+  // Grouped tables: the head columns are filled once per group (a part of speech, or a word) and the rows
+  // under it hold its forms. In the data, a group is its first row (which has the head) plus the rows after
+  // it with an empty head. On screen each group is a block: the head spans its rows, and an empty row at the
+  // bottom of the block adds another form to that group. The empty row at the very bottom starts a new group.
+  const GROUPED = {
+    inflectionTypes: { key: 'pos', head: ['pos'] },
+    inflections: { key: 'word', head: ['word', 'pattern'] },
+  };
+  const filled = v => Array.isArray(v) ? v.length > 0 : !!(v && String(v).trim());
+
+  function renderGroups(tbody, langId, t, ctx) {
+    const spec = GROUPED[t.id];
+    const headCols = t.columns.filter(c => spec.head.includes(c.id));
+    const bodyCols = t.columns.filter(c => !spec.head.includes(c.id));
+    const groups = [];
+    t.rows.forEach((row, i) => {
+      if (filled(row.cells[spec.key]) || !groups.length) groups.push([]);
+      groups[groups.length - 1].push({ row, i });
+    });
+    for (const g of groups) {
+      const last = g[g.length - 1];
+      const addRow = bodyCols.some(c => filled(last.row.cells[c.id]));
+      const span = g.length + (addRow ? 1 : 0);
+      g.forEach(({ row, i }, k) => {
+        const tr = rowEl(langId, t, row, i + 1, ctx, k === 0
+          ? { span: Object.fromEntries(headCols.map(c => [c.id, span])) }
+          : { columns: bodyCols });
+        if (k === 0) tr.classList.add('group-start');
+        tbody.appendChild(tr);
+      });
+      if (addRow) tbody.appendChild(rowEl(langId, t, null, '', ctx, { columns: bodyCols, index: last.i + 1, blankId: 'add-' + g[0].row.id }));
+    }
+    const start = rowEl(langId, t, null, t.rows.length + 1, ctx, { columns: headCols, filler: bodyCols.length });
+    if (groups.length) start.classList.add('group-start');
+    tbody.appendChild(start);
+  }
+
+  // Delete a row of a grouped table. Deleting a group's first row moves its head onto the next row,
+  // so the rest of the group stays together instead of joining the group above.
+  function deleteGrouped(langId, t, row) {
+    const spec = GROUPED[t.id];
+    const i = t.rows.indexOf(row);
+    const next = t.rows[i + 1];
+    if (!filled(row.cells[spec.key]) || !next || filled(next.cells[spec.key])) return Store.deleteRow(langId, t.id, row.id);
+    Store.transact('Delete row', () => {
+      spec.head.forEach(c => { if (row.cells[c] !== undefined) Store.updateCell(langId, t.id, next.id, c, row.cells[c]); });
+      Store.deleteRow(langId, t.id, row.id);
+    });
+  }
+
+  // g.columns: which columns to draw (default all); g.span: rowspan per column id; g.index: where the empty
+  // row inserts its new row (default the end); g.blankId: id for an empty row; g.filler: empty cells to pad with.
+  function rowEl(langId, t, row, num, ctx, g = {}) {
     const tr = document.createElement('tr');
-    tr.dataset.row = row ? row.id : 'blank';
-    if (!row) tr.className = 'blank';
+    tr.dataset.row = row ? row.id : (g.blankId || 'blank');
+    if (!row) tr.className = 'blank' + (g.blankId ? ' add' : '');
     tr.innerHTML = `<td class="num">${num}</td>`;
 
     // Write a value into this row, creating the row first if this is the empty row.
@@ -108,14 +163,15 @@ const Sheet = (() => {
     const write = (colId, value, opts = {}) => {
       if (row || createdId) return Store.updateCell(langId, t.id, row?.id || createdId, colId, value, opts);
       const id = createdId = newId();
-      Store.addRow(langId, t.id, { [colId]: value }, { id, coalesce: `${t.id}:${id}:${colId}`, meta: { focus: { table: t.id, row: id, col: colId, ...opts.focus } } });
+      Store.addRow(langId, t.id, { [colId]: value }, { id, index: g.index, coalesce: `${t.id}:${id}:${colId}`, meta: { focus: { table: t.id, row: id, col: colId, ...opts.focus } } });
     };
 
-    t.columns.forEach(col => {
+    (g.columns || t.columns).forEach(col => {
       const td = document.createElement('td');
+      if (g.span?.[col.id] > 1) { td.rowSpan = g.span[col.id]; td.classList.add('group-head'); }
       const type = Store.columnType(t.id, col.id);
       const value = row ? row.cells[col.id] : undefined;
-      td.className = 'c-' + type;
+      td.classList.add('c-' + type);
       if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx));
       else if (type === 'pos') td.appendChild(posCell(t, row, col, value, write));
       else if (type === 'posOne') td.appendChild(posSelectCell(t, row, col, value, write));
@@ -125,11 +181,12 @@ const Sheet = (() => {
       tr.appendChild(td);
     });
 
+    if (g.filler) tr.insertAdjacentHTML('beforeend', `<td class="filler" colspan="${g.filler}"></td>`);
     const del = document.createElement('td');
     del.className = 'act';
     if (row) {
       del.innerHTML = `<button class="del" title="Delete row" aria-label="Delete row" tabindex="-1">${TRASH}</button>`;
-      del.firstChild.onclick = () => Store.deleteRow(langId, t.id, row.id);
+      del.firstChild.onclick = () => GROUPED[t.id] ? deleteGrouped(langId, t, row) : Store.deleteRow(langId, t.id, row.id);
     }
     tr.appendChild(del);
     return tr;
@@ -153,9 +210,14 @@ const Sheet = (() => {
       overlay.scrollLeft = input.scrollLeft;
     };
     input.addEventListener('change', () => { if (row) ctx.committed?.(t.id, row.id, col.id, input.value); });
+    // In grouped tables, the first letter typed into an empty cell redraws the table, so a group's
+    // "add a form" row appears (or moves) as soon as its last row gets content.
+    let wasEmpty = !input.value;
     input.addEventListener('input', () => {
       repaint();
-      write(col.id, input.value, { silent: !!row, coalesce: row ? `${t.id}:${row.id}:${col.id}` : undefined, focus: { caret: input.selectionStart } });
+      const silent = !!row && !(GROUPED[t.id] && wasEmpty);
+      wasEmpty = !input.value;
+      write(col.id, input.value, { silent, coalesce: row ? `${t.id}:${row.id}:${col.id}` : undefined, focus: { caret: input.selectionStart } });
     });
     if (type === 'text') return input;
     wrap = document.createElement('div');
