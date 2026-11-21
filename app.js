@@ -8,8 +8,6 @@ function route() {
   langId = m && Store.language(m[1]) ? m[1] : null;
   $('#home').hidden = !!langId;
   $('#sheet-view').hidden = !langId;
-  $('#sheet-tools').hidden = !langId;
-  $('#search').value = '';
   if (langId) {
     $('#crumb').textContent = ' / ' + Store.language(langId).name;
     document.title = Store.language(langId).name + ' · LangKit';
@@ -56,19 +54,13 @@ $('#create-form').onsubmit = e => {
 // ---- Sheet: one row per entry, plus an always-empty row at the bottom ----
 function renderSheet(focus) {
   const t = Store.table(langId);
-  const q = $('#search').value.trim().toLowerCase();
 
   thead.innerHTML = '<tr><th class="num">#</th>' +
     t.columns.map(c => `<th>${esc(c.name)}</th>`).join('') + '<th class="act"></th></tr>';
 
   tbody.innerHTML = '';
-  const rows = t.rows.filter(r => !q ||
-    t.columns.some(c => (r.cells[c.id] || '').toLowerCase().includes(q)));
-
-  rows.forEach((row, i) => tbody.appendChild(rowEl(t, row, i + 1)));
-  if (!q) tbody.appendChild(rowEl(t, null, t.rows.length + 1)); // the empty row
-
-  $('#status').textContent = q ? `${rows.length} of ${t.rows.length} entries match` : '';
+  t.rows.forEach((row, i) => tbody.appendChild(rowEl(t, row, i + 1)));
+  tbody.appendChild(rowEl(t, null, t.rows.length + 1)); // the empty row
 
   if (focus) {
     const input = tbody.querySelector(`tr[data-id="${focus.row}"] input[data-col="${focus.col}"]`);
@@ -116,30 +108,8 @@ function onKey(e, tr, col) {
   target?.querySelector(`input[data-col="${col}"]`)?.focus();
 }
 
-function flash(msg) {
-  const el = $('#flash');
-  el.textContent = msg;
-  el.hidden = false;
-  clearTimeout(flash.t);
-  flash.t = setTimeout(() => { el.hidden = true; }, 5000);
-}
-
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-$('#search').oninput = () => renderSheet();
-$('#export').onclick = () => {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([Store.exportJSON()], { type: 'application/json' }));
-  a.download = 'langkit.json';
-  a.click();
-};
-$('#import').onchange = async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  try { Store.importJSON(await file.text()); location.hash = ''; route(); }
-  catch (err) { flash('Import failed: ' + err.message); }
-  e.target.value = '';
-};
 
 window.addEventListener('hashchange', route);
 route();
