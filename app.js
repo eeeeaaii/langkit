@@ -1,26 +1,56 @@
 const $ = s => document.querySelector(s);
-const thead = $('#sheet thead'), tbody = $('#sheet tbody');
 let langId = null;
+let currentTab = 'phrases';
 
-// ---- Tabs inside a language: Phrases, Phonology, Lexicon ----
+// ---------- What is on screen (so undo/redo can bring it back) ----------
+function focusInfo() {
+  const el = document.activeElement;
+  const table = el?.closest?.('table.grid');
+  const tr = el?.closest?.('tr');
+  const col = el?.closest?.('td')?.querySelector('[data-col]')?.dataset.col || el?.dataset?.col;
+  if (!table || !tr || !col) return null;
+  return { table: table.dataset.table, row: tr.dataset.row, col, caret: el.tagName === 'INPUT' ? el.selectionStart : null };
+}
+Store.setViewProvider(() => ({ hash: location.hash, tab: currentTab, focus: focusInfo() }));
+
+function restoreFocus(f) {
+  if (!f) return;
+  const table = document.querySelector(`table.grid[data-table="${f.table}"]`);
+  const tr = table?.querySelector(`tr[data-row="${f.row}"]`) || table?.querySelector('tr.blank');
+  const el = tr?.querySelector(`[data-col="${f.col}"]`);
+  if (!el) return;
+  el.focus();
+  if (el.tagName === 'INPUT') {
+    const pos = f.caret == null ? el.value.length : Math.min(f.caret, el.value.length);
+    el.setSelectionRange(pos, pos);
+  }
+}
+
+// ---------- Tabs inside a language: Phrases, Phonology, Lexicon ----------
 function showTab(name) {
+  currentTab = name;
   document.querySelectorAll('.tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.id !== 'tab-' + name; });
 }
 document.querySelectorAll('.tabs [role=tab]').forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
 
-// ---- Routing: "#" is the home screen, "#lang-<id>" is a language's sheet ----
+// ---------- Routing: "#" is the home screen, "#lang-<id>" is a language ----------
+let pendingView = null;
 function route() {
   const m = location.hash.match(/^#lang-(\w+)$/);
   langId = m && Store.language(m[1]) ? m[1] : null;
   $('#home').hidden = !!langId;
   $('#sheet-view').hidden = !langId;
+  const view = pendingView;
+  pendingView = null;
   if (langId) {
-    $('#crumb').textContent = ' / ' + Store.language(langId).name;
-    document.title = Store.language(langId).name + ' · LangKit';
-    showTab('phrases');
-    renderSheet();
-    tbody.querySelector('tr:last-child input')?.focus();
+    const lang = Store.language(langId);
+    $('#crumb').textContent = ' / ' + lang.name;
+    document.title = lang.name + ' · LangKit';
+    showTab(view?.tab || 'phrases');
+    renderLanguage();
+    if (view) restoreFocus(view.focus);
+    else document.querySelector('#tab-phrases tr.blank input')?.focus();
   } else {
     $('#crumb').textContent = '';
     document.title = 'LangKit';
@@ -28,19 +58,19 @@ function route() {
   }
 }
 
-// ---- Home: create a language, list existing ones ----
+// ---------- Home: create a language, list existing ones ----------
 function renderHome() {
   const langs = Store.languages();
   $('#lang-list-section').hidden = !langs.length;
   $('#lang-list').innerHTML = '';
   langs.forEach(lang => {
     const li = document.createElement('li');
-    const n = lang.tables[0].rows.length;
-    li.innerHTML = `<a href="#lang-${lang.id}">${esc(lang.name)}</a><span class="muted">${n} ${n === 1 ? 'entry' : 'entries'}</span><button class="link" title="Delete language">Delete</button>`;
+    const n = lang.tables.find(t => t.id === 'phrases').rows.length;
+    li.innerHTML = `<a href="#lang-${lang.id}">${Sheet.esc(lang.name)}</a><span class="muted">${n} ${n === 1 ? 'phrase' : 'phrases'}</span><button class="link" title="Delete language">Delete</button>`;
     // Two-step delete in the page itself (embedded viewers block confirm() dialogs).
     const btn = li.querySelector('button');
     btn.onclick = () => {
-      if (btn.dataset.armed) { Store.deleteLanguage(lang.id); renderHome(); return; }
+      if (btn.dataset.armed) { Store.deleteLanguage(lang.id); return; }
       btn.dataset.armed = '1';
       btn.textContent = `Delete ${lang.name} and all entries?`;
       btn.classList.add('danger');
@@ -59,65 +89,50 @@ $('#create-form').onsubmit = e => {
   location.hash = '#lang-' + Store.createLanguage(name).id;
 };
 
-// ---- Sheet: one row per entry, plus an always-empty row at the bottom ----
-function renderSheet(focus) {
-  const t = Store.table(langId);
+// ---------- A language's tables ----------
+const ctx = { inventory: () => Parse.inventory(Store.language(langId)) };
+function renderLanguage() {
+  Sheet.render($('#phrases-table'), langId, 'phrases', ctx);
+  for (const id of ['consonants', 'vowels', 'diphthongs']) Sheet.render($(`#${id}-table`), langId, id, ctx);
+}
 
-  thead.innerHTML = '<tr><th class="num">#</th>' +
-    t.columns.map(c => `<th>${esc(c.name)}</th>`).join('') + '<th class="act"></th></tr>';
-
-  tbody.innerHTML = '';
-  t.rows.forEach((row, i) => tbody.appendChild(rowEl(t, row, i + 1)));
-  tbody.appendChild(rowEl(t, null, t.rows.length + 1)); // the empty row
-
-  if (focus) {
-    const input = tbody.querySelector(`tr[data-id="${focus.row}"] input[data-col="${focus.col}"]`);
-    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+// ---------- React to changes ----------
+Store.subscribe(e => {
+  if (e.kind === 'do') {
+    // Typing in an existing cell: the screen already shows it; just refresh the word highlighting.
+    if (e.silent) { if (langId) Sheet.repaintWords($('#sheet-view'), ctx.inventory()); return; }
+    const focus = e.meta?.focus || focusInfo();
+    if (!langId || !Store.language(langId)) { location.hash === '' ? route() : (location.hash = ''); return; }
+    renderLanguage();
+    restoreFocus(focus);
+    return;
   }
-}
+  // Undo / redo: go back to where the change was made.
+  Picker.close();
+  const view = e.view || {};
+  const target = view.hash && view.hash.startsWith('#lang-') && Store.language(view.hash.slice(6)) ? view.hash : '';
+  if (target !== location.hash) { pendingView = view; location.hash = target; return; }
+  if (!langId) { renderHome(); return; }
+  if (view.tab) showTab(view.tab);
+  renderLanguage();
+  restoreFocus(view.focus);
+});
 
-function rowEl(t, row, num) {
-  const tr = document.createElement('tr');
-  if (row) tr.dataset.id = row.id; else tr.className = 'blank';
-  tr.innerHTML = `<td class="num">${num}</td>`;
-  t.columns.forEach(col => {
-    const td = document.createElement('td');
-    const input = document.createElement('input');
-    input.value = row ? row.cells[col.id] || '' : '';
-    input.dataset.col = col.id;
-    input.setAttribute('aria-label', col.name);
-    input.addEventListener('input', () => {
-      if (row) return Store.updateCell(langId, row.id, col.id, input.value);
-      // Typing in the empty row turns it into a real row and adds a fresh empty row below.
-      const created = Store.addRow(langId, { [col.id]: input.value });
-      renderSheet({ row: created.id, col: col.id });
-    });
-    input.addEventListener('keydown', e => onKey(e, tr, col.id));
-    td.appendChild(input);
-    tr.appendChild(td);
-  });
-  const del = document.createElement('td');
-  del.className = 'act';
-  if (row) {
-    del.innerHTML = '<button title="Delete row" aria-label="Delete row" tabindex="-1">×</button>';
-    del.firstChild.onclick = () => { Store.deleteRow(langId, row.id); renderSheet(); };
+// Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z or Ctrl+Y redo. These replace the browser's own text undo,
+// so every change in the app goes through one history.
+document.addEventListener('keydown', e => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' || k === 'y') {
+    e.preventDefault();
+    if (k === 'y' || e.shiftKey) Store.redo(); else Store.undo();
   }
-  tr.appendChild(del);
-  return tr;
-}
-
-// Spreadsheet-style keys: Enter / arrows move up and down within a column.
-function onKey(e, tr, col) {
-  let target;
-  if (e.key === 'Enter' || e.key === 'ArrowDown') target = tr.nextElementSibling;
-  else if (e.key === 'ArrowUp') target = tr.previousElementSibling;
-  else return;
-  e.preventDefault();
-  target?.querySelector(`input[data-col="${col}"]`)?.focus();
-}
-
-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-
+}, true);
+// Moving to a different cell starts a new undo step for typing.
+document.addEventListener('focusin', () => {
+  const f = focusInfo();
+  if (!f || `${f.table}:${f.row}:${f.col}` !== Store.coalesceKey()) Store.breakCoalescing();
+});
 
 window.addEventListener('hashchange', route);
 route();
