@@ -47,6 +47,17 @@ const Store = (() => {
       { id: 'phoneme', name: 'Phoneme', type: 'diphthong' },
       { id: 'notes', name: 'Notes', type: 'text' },
     ] },
+    // Inflections: a word, then one row per form. Rows with an empty Word belong to the word above.
+    { id: 'inflections', name: 'Inflection', columns: () => [
+      { id: 'word', name: 'Word', type: 'word' },
+      { id: 'form', name: 'Form', type: 'text' },
+      { id: 'inflected', name: 'Inflected Form', type: 'word' },
+    ] },
+    // Inflection types: a part of speech, then one row per form. Rows with an empty Part of Speech belong to the one above.
+    { id: 'inflectionTypes', name: 'Inflection Types', columns: () => [
+      { id: 'pos', name: 'Part of Speech', type: 'text' },
+      { id: 'form', name: 'Form', type: 'text' },
+    ] },
   ];
 
   const columnType = (tableId, colId) => {
@@ -252,6 +263,11 @@ const Store = (() => {
       const row = table(langId, tableId)?.rows.find(r => r.id === rowId);
       if (!row || same(row.cells[colId], value)) return;
       transact('Edit cell', () => record({ t: 'set', path, value }), opts);
+    },
+    // Insert rows (given as cell objects) at an index, as part of the current transaction if there is one.
+    insertRows(langId, tableId, index, cellsList, label = 'Add rows') {
+      const path = [...tablePath(langId, tableId), 'rows'];
+      transact(label, () => cellsList.forEach((cells, i) => record({ t: 'insert', path, index: index + i, value: { id: uid(), cells } })));
     },
     deleteRow(langId, tableId, rowId) {
       const index = table(langId, tableId).rows.findIndex(r => r.id === rowId);
