@@ -2,6 +2,13 @@ const $ = s => document.querySelector(s);
 const thead = $('#sheet thead'), tbody = $('#sheet tbody');
 let langId = null;
 
+// ---- Tabs inside a language: Phrases, Phonology, Lexicon ----
+function showTab(name) {
+  document.querySelectorAll('.tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.id !== 'tab-' + name; });
+}
+document.querySelectorAll('.tabs [role=tab]').forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
+
 // ---- Routing: "#" is the home screen, "#lang-<id>" is a language's sheet ----
 function route() {
   const m = location.hash.match(/^#lang-(\w+)$/);
@@ -11,6 +18,7 @@ function route() {
   if (langId) {
     $('#crumb').textContent = ' / ' + Store.language(langId).name;
     document.title = Store.language(langId).name + ' · LangKit';
+    showTab('phrases');
     renderSheet();
     tbody.querySelector('tr:last-child input')?.focus();
   } else {

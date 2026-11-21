@@ -34,3 +34,7 @@ button.link:hover { color:#d9480f; }
 tr.blank .num { opacity:.4; }
 button.link.danger { color:#d9480f; }
 @media (max-width: 600px) { header, main { padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); } }
+.tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px; }
+.tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:none; color:var(--muted); padding:8px 14px; margin-bottom:-1px; }
+.tabs button[aria-selected="true"] { color:var(--fg); border-bottom-color:var(--accent); font-weight:600; }
+.tabs button:hover { color:var(--fg); }
