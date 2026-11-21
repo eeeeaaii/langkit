@@ -6,7 +6,7 @@ let currentTab = 'phrases';
 function focusInfo() {
   const el = document.activeElement;
   const table = el?.closest?.('table.grid');
-  const tr = el?.closest?.('tr');
+  const tr = el?.closest?.('[data-row]');
   const col = el?.closest?.('td')?.querySelector('[data-col]')?.dataset.col || el?.dataset?.col;
   if (!table || !tr || !col) return null;
   return { table: table.dataset.table, row: tr.dataset.row, col, caret: el.tagName === 'INPUT' ? el.selectionStart : null };
@@ -16,7 +16,7 @@ Store.setViewProvider(() => ({ hash: location.hash, tab: currentTab, focus: focu
 function restoreFocus(f) {
   if (!f) return;
   const table = document.querySelector(`table.grid[data-table="${f.table}"]`);
-  const tr = table?.querySelector(`tr[data-row="${f.row}"]`) || table?.querySelector('tr.blank');
+  const tr = table?.querySelector(`[data-row="${f.row}"]`) || table?.querySelector('tr.blank');
   const el = tr?.querySelector(`[data-col="${f.col}"]`);
   if (!el) return;
   el.focus();

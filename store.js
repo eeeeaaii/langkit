@@ -56,10 +56,12 @@ const Store = (() => {
       { id: 'form', name: 'Form', type: 'text' },
       { id: 'inflected', name: 'Inflected Form', type: 'word' },
     ] },
-    // Inflection types: a part of speech, then one row per form. Rows with an empty Part of Speech belong to the one above.
+    // Inflection types: a tree per part of speech. Each row is one item: a part of speech (no parent) or a
+    // value in a layer under its parent, e.g. verb > indicative > present > 1st > singular.
+    // A part of speech's forms are the paths from it down to each item with nothing under it.
     { id: 'inflectionTypes', name: 'Inflection Types', columns: () => [
-      { id: 'pos', name: 'Part of Speech', type: 'posOne' },
-      { id: 'form', name: 'Form', type: 'text' },
+      { id: 'label', name: 'Label', type: 'text' },
+      { id: 'parent', name: 'Parent', type: 'text' },
     ] },
   ];
 
@@ -68,8 +70,26 @@ const Store = (() => {
     return t?.columns({ name: '' }).find(c => c.id === colId)?.type || 'text';
   };
 
+  // Inflection Types used to be rows of part of speech + form (part of speech only on a group's first row).
+  // Turn those into the tree: each part of speech an item, each form an item under it.
+  function migrateInflectionTypes(lang) {
+    const t = lang.tables.find(x => x.id === 'inflectionTypes');
+    if (!t || !t.rows.some(r => 'pos' in r.cells || 'form' in r.cells)) return;
+    const rows = [];
+    let root = null;
+    for (const r of t.rows) {
+      const pos = (Array.isArray(r.cells.pos) ? r.cells.pos[0] : r.cells.pos || '').trim();
+      if (pos) { root = { id: r.id, cells: { parent: '', label: pos } }; rows.push(root); }
+      const form = (r.cells.form || '').trim();
+      if (form && root) rows.push({ id: uid(), cells: { parent: root.id, label: form } });
+    }
+    t.rows = rows;
+    t.columns = [];
+  }
+
   // Bring a language up to the current schema: add missing tables and columns, keep everything else.
   function normalize(lang) {
+    migrateInflectionTypes(lang);
     SCHEMA.forEach((spec, ti) => {
       let t = lang.tables.find(x => x.id === spec.id);
       if (!t) { t = { id: spec.id, name: spec.name, columns: [], rows: [] }; lang.tables.splice(ti, 0, t); }
