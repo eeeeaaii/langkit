@@ -6,7 +6,7 @@ Create a language, then work in its tabs:
 
 - **Phrases**: English, your language, and notes. Words in your language are checked against the phonology as you type; letters with no phoneme are underlined in orange.
 - **Phonology**: Consonants, Vowels and Diphthongs tables. Type a spelling under English Orthography, then click the Phoneme cell to pick from an IPA chart (click to choose, right-click to hear). Diphthongs use + to add more vowels.
-- **Lexicon**: not built yet.
+- **Lexicon**: Word, English, Part of Speech, Note, In a Sentence and Sentence Translation. Word and In a Sentence are checked against the phonology like the Phrases language column.
 
 Every table has an empty row at the bottom; type in it to add an entry. Cmd/Ctrl+Z undoes and Cmd/Ctrl+Shift+Z (or Ctrl+Y) redoes any change.
 
