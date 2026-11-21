@@ -118,6 +118,7 @@ const Sheet = (() => {
       td.className = 'c-' + type;
       if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx));
       else if (type === 'pos') td.appendChild(posCell(t, row, col, value, write));
+      else if (type === 'posOne') td.appendChild(posSelectCell(t, row, col, value, write));
       else if (type === 'diphthong') td.appendChild(diphthongCell(t, row, col, value, write));
       else td.appendChild(phonemeCell(t, row, col, value, type, write));
       tr.appendChild(td);
@@ -140,13 +141,14 @@ const Sheet = (() => {
     input.setAttribute('aria-label', col.name);
     input.spellcheck = type === 'text';
     input.addEventListener('keydown', e => moveKey(e, input));
-    let overlay = null, wrap = null;
+    let overlay = null, wrap = null, say = null;
     const repaint = () => {
       if (!overlay) return;
       const view = document.activeElement === input ? 'text' : viewOf(t.id, col.id);
       wrap.dataset.view = view;
       paintWord(overlay, input.value, ctx, type === 'phrase', view);
       paintUsage(wrap, input.value, ctx);
+      say.hidden = !input.value.trim();
       overlay.scrollLeft = input.scrollLeft;
     };
     input.addEventListener('change', () => { if (row) ctx.committed?.(t.id, row.id, col.id, input.value); });
@@ -164,6 +166,15 @@ const Sheet = (() => {
     overlay.className = 'word-overlay';
     overlay.setAttribute('aria-hidden', 'true');
     wrap.append(overlay, input);
+    // Speaker button: says the whole cell.
+    say = document.createElement('button');
+    say.className = 'say';
+    say.tabIndex = -1;
+    say.title = 'Hear it';
+    say.setAttribute('aria-label', 'Hear ' + col.name);
+    say.onmousedown = e => e.preventDefault();
+    say.onclick = () => Speech.say(input.value, ctx.inventory(), say);
+    wrap.appendChild(say);
     if (t.id === 'lexicon' && col.id === 'word') {
       const badge = document.createElement('span');
       badge.className = 'usage';
@@ -261,6 +272,18 @@ const Sheet = (() => {
     return b;
   }
   const TRASH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M3.8 4l.7 9.5h7l.7-9.5M6.5 6.5v4.5M9.5 6.5v4.5"/></svg>';
+  // One part of speech, from a dropdown. Empty means "same as the row above".
+  function posSelectCell(t, row, col, value, write) {
+    const sel = document.createElement('select');
+    sel.className = 'pos-select';
+    sel.dataset.col = col.id;
+    sel.setAttribute('aria-label', col.name);
+    const options = ['', ...POS];
+    if (value && !POS.includes(value)) options.push(value); // keep anything typed before this was a dropdown
+    sel.innerHTML = options.map(o => `<option value="${esc(o)}"${o === (value || '') ? ' selected' : ''}>${esc(o)}</option>`).join('');
+    sel.onchange = () => write(col.id, sel.value || undefined, { focus: {} });
+    return sel;
+  }
   const POS = ['noun', 'pronoun', 'verb', 'adjective', 'adverb', 'preposition', 'postposition', 'conjunction', 'determiner', 'numeral', 'particle', 'interjection'];
 
   // Enter / arrows move up and down within a column, like a spreadsheet.
@@ -285,6 +308,7 @@ const Sheet = (() => {
       w.dataset.view = view;
       paintWord(w.querySelector('.word-overlay'), input.value, ctx, !!w.dataset.lexicon, view);
       paintUsage(w, input.value, ctx);
+      w.querySelector('.say').hidden = !input.value.trim();
     });
   }
 
