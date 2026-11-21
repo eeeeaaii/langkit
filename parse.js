@@ -54,19 +54,36 @@ const Parse = (() => {
   const lexiconRow = (lang, word) => lang.tables.find(x => x.id === 'lexicon')?.rows
     .find(r => (r.cells.word || '').trim().toLowerCase() === word.toLowerCase());
 
-  // Named inflections: words in the Inflection tab given an Inflection Name, used as models for other words.
+  // The words in the Inflection tab, each with its rows of forms. A word's first row links to its Lexicon
+  // entry (lex), so the word shown is always the Lexicon's; older rows may instead have the word typed in.
+  // Returns [{ id (the first row's id), key (the word), rows: [{ row, index }] }].
+  function inflectionGroups(lang) {
+    const lex = lang.tables.find(x => x.id === 'lexicon')?.rows || [];
+    const out = [];
+    (lang.tables.find(x => x.id === 'inflections')?.rows || []).forEach((row, index) => {
+      if (row.cells.lex || (row.cells.word || '').trim()) {
+        const linked = row.cells.lex && lex.find(r => r.id === row.cells.lex);
+        out.push({ id: row.id, key: ((linked ? linked.cells.word : row.cells.word) || '').trim(), rows: [] });
+      }
+      if (out.length) out[out.length - 1].rows.push({ row, index });
+    });
+    return out;
+  }
+
+  // Inflections: every word in the Inflection tab is a model other words of its part of speech can follow.
+  // Its name is the Inflection Name, or "like <word>" when none is given.
   // The model's stem is what its default form (the Word) and all its inflected forms share at the start;
   // the rest of each form is its ending. E.g. vivir / vivo / vives: stem "viv", default ending "ir", endings "o", "es".
   function patterns(lang) {
-    const t = lang.tables.find(x => x.id === 'inflections');
-    return groups(t?.rows || [], 'word').filter(g => (g.rows[0].row.cells.pattern || '').trim()).map(g => {
+    return inflectionGroups(lang).filter(g => g.key).map(g => {
       const model = g.key.toLowerCase();
       const forms = g.rows.map(({ row }) => ({ form: (row.cells.form || '').trim(), inflected: (row.cells.inflected || '').trim().toLowerCase() }))
         .filter(f => f.inflected);
       let stem = model;
       for (const f of forms) while (!f.inflected.startsWith(stem)) stem = stem.slice(0, -1);
       return {
-        name: g.rows[0].row.cells.pattern.trim(),
+        id: g.id,
+        name: (g.rows[0].row.cells.pattern || '').trim() || 'like ' + g.key,
         model,
         pos: [].concat(lexiconRow(lang, model)?.cells.pos || []),
         ending: model.slice(stem.length),
@@ -83,21 +100,24 @@ const Parse = (() => {
     return pattern.forms.map(f => ({ form: f.form, inflected: stem + f.ending }));
   }
 
+  // The inflection a Lexicon entry follows: stored as the inflection's id (older entries stored its name).
+  const findPattern = (list, value) => value ? list.find(p => p.id === value) || list.find(p => p.name.toLowerCase() === String(value).toLowerCase()) : null;
+
   // Inflected forms mapped to their base word (both lowercased): the forms written out in the Inflection tab,
-  // plus the forms of every Lexicon word that follows a named inflection.
+  // plus the forms of every Lexicon word that follows an inflection.
   function inflections(lang) {
-    const t = lang.tables.find(x => x.id === 'inflections');
     const map = new Map();
-    for (const g of groups(t?.rows || [], 'word')) {
+    for (const g of inflectionGroups(lang)) {
+      if (!g.key) continue;
       for (const { row } of g.rows) {
         const form = (row.cells.inflected || '').trim().toLowerCase();
         if (form && !map.has(form)) map.set(form, g.key.toLowerCase());
       }
     }
-    const byName = new Map(patterns(lang).map(p => [p.name.toLowerCase(), p]));
+    const list = patterns(lang);
     for (const r of lang.tables.find(x => x.id === 'lexicon')?.rows || []) {
       const word = (r.cells.word || '').trim().toLowerCase();
-      const p = word && byName.get((r.cells.inflection || '').toLowerCase());
+      const p = word && findPattern(list, r.cells.inflection);
       if (p) for (const f of follow(word, p)) if (!map.has(f.inflected)) map.set(f.inflected, word);
     }
     return map;
@@ -157,5 +177,5 @@ const Parse = (() => {
     return text.split(SEPARATOR).filter(s => s !== '').map(s => ({ text: s, word: !SEPARATOR.test(s) }));
   }
 
-  return { inventory, segment, groups, patterns, follow, inflections, inflectionForms, lexicon, glosses, usage, words };
+  return { inventory, segment, groups, inflectionGroups, patterns, findPattern, follow, inflections, inflectionForms, lexicon, glosses, usage, words };
 })();
