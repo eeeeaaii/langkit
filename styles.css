@@ -127,3 +127,8 @@ td .word input, td .word .word-overlay { padding-bottom:6px; }
 .view-toggle button[aria-pressed="true"] { background:var(--accent); color:var(--cell); }
 /* In IPA and Literal views the painted text no longer matches the typed text, so hide the caret until the cell is edited. */
 .word[data-view="ipa"] input, .word[data-view="literal"] input { caret-color:transparent; }
+
+/* Lexicon Word cells: usage count in a small circle at the right. */
+.word .usage { position:absolute; right:4px; top:4px; min-width:16px; height:16px; padding:0 4px; box-sizing:border-box; border-radius:8px; background:var(--line); color:var(--muted); font-size:10px; font-weight:600; line-height:16px; text-align:center; pointer-events:none; }
+.word .usage[hidden] { display:none; }
+td .word.has-usage input, td .word.has-usage .word-overlay { padding-right:26px; }
