@@ -55,7 +55,7 @@ const Store = (() => {
     ] },
     // Inflection types: a part of speech, then one row per form. Rows with an empty Part of Speech belong to the one above.
     { id: 'inflectionTypes', name: 'Inflection Types', columns: () => [
-      { id: 'pos', name: 'Part of Speech', type: 'text' },
+      { id: 'pos', name: 'Part of Speech', type: 'posOne' },
       { id: 'form', name: 'Form', type: 'text' },
     ] },
   ];
