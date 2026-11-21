@@ -39,10 +39,47 @@ const Parse = (() => {
     return out;
   }
 
-  // Every word in the Lexicon's Word column, lowercased.
+  // Rows grouped under a key column that is filled only on a group's first row (like a spreadsheet):
+  // returns [{ key, rows: [{ row, index }] }]. Rows before the first key are left out.
+  function groups(rows, keyCol) {
+    const out = [];
+    rows.forEach((row, index) => {
+      const key = (row.cells[keyCol] || '').trim();
+      if (key) out.push({ key, rows: [] });
+      if (out.length) out[out.length - 1].rows.push({ row, index });
+    });
+    return out;
+  }
+
+  // Inflected forms from the Inflection tab, mapped to their base word (both lowercased).
+  function inflections(lang) {
+    const t = lang.tables.find(x => x.id === 'inflections');
+    const map = new Map();
+    for (const g of groups(t?.rows || [], 'word')) {
+      for (const { row } of g.rows) {
+        const form = (row.cells.inflected || '').trim().toLowerCase();
+        if (form && !map.has(form)) map.set(form, g.key.toLowerCase());
+      }
+    }
+    return map;
+  }
+
+  // The forms defined for a part of speech in Inflection Types (matched ignoring case).
+  function inflectionForms(lang, pos) {
+    const t = lang.tables.find(x => x.id === 'inflectionTypes');
+    const g = groups(t?.rows || [], 'pos').find(x => x.key.toLowerCase() === pos.toLowerCase());
+    return g ? g.rows.map(({ row }) => (row.cells.form || '').trim()).filter(Boolean) : [];
+  }
+
+  // Every lexicon word that a written word stands for: itself, or the base word of an inflected form.
+  const baseOf = (word, infl) => infl.get(word) || word;
+
+  // Every word in the Lexicon's Word column, plus its inflected forms, lowercased.
   function lexicon(lang) {
     const t = lang.tables.find(x => x.id === 'lexicon');
-    return new Set((t?.rows || []).map(r => (r.cells.word || '').trim().toLowerCase()).filter(Boolean));
+    const set = new Set((t?.rows || []).map(r => (r.cells.word || '').trim().toLowerCase()).filter(Boolean));
+    for (const [form, base] of inflections(lang)) if (set.has(base)) set.add(form);
+    return set;
   }
 
   // Every lexicon word mapped to its literal English: the first definition (before a comma),
@@ -56,16 +93,18 @@ const Parse = (() => {
       const gloss = ((r.cells.english || '').split(',')[0].match(/^[A-Za-z' -]*/)[0]).trim();
       if (word && gloss && !map.has(word)) map.set(word, gloss);
     }
+    for (const [form, base] of inflections(lang)) if (map.has(base) && !map.has(form)) map.set(form, map.get(base));
     return map;
   }
 
   // How many times each word appears where the language is written: the Phrases language column
-  // and the Lexicon's In a Sentence column. Keys are lowercased.
+  // and the Lexicon's In a Sentence column. Inflected forms count toward their base word. Keys are lowercased.
   function usage(lang) {
     const counts = new Map();
+    const infl = inflections(lang);
     const count = text => words(text || '').forEach(w => {
       if (!w.word) return;
-      const k = w.text.toLowerCase();
+      const k = baseOf(w.text.toLowerCase(), infl);
       counts.set(k, (counts.get(k) || 0) + 1);
     });
     lang.tables.find(x => x.id === 'phrases')?.rows.forEach(r => count(r.cells.conlang));
@@ -79,5 +118,5 @@ const Parse = (() => {
     return text.split(SEPARATOR).filter(s => s !== '').map(s => ({ text: s, word: !SEPARATOR.test(s) }));
   }
 
-  return { inventory, segment, lexicon, glosses, usage, words };
+  return { inventory, segment, groups, inflections, inflectionForms, lexicon, glosses, usage, words };
 })();

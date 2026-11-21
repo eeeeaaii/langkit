@@ -148,6 +148,7 @@ const Sheet = (() => {
       paintUsage(wrap, input.value, ctx);
       overlay.scrollLeft = input.scrollLeft;
     };
+    input.addEventListener('change', () => { if (row) ctx.committed?.(t.id, row.id, col.id, input.value); });
     input.addEventListener('input', () => {
       repaint();
       write(col.id, input.value, { silent: !!row, coalesce: row ? `${t.id}:${row.id}:${col.id}` : undefined, focus: { caret: input.selectionStart } });
