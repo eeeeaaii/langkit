@@ -59,11 +59,25 @@ const Parse = (() => {
     return map;
   }
 
+  // How many times each word appears where the language is written: the Phrases language column
+  // and the Lexicon's In a Sentence column. Keys are lowercased.
+  function usage(lang) {
+    const counts = new Map();
+    const count = text => words(text || '').forEach(w => {
+      if (!w.word) return;
+      const k = w.text.toLowerCase();
+      counts.set(k, (counts.get(k) || 0) + 1);
+    });
+    lang.tables.find(x => x.id === 'phrases')?.rows.forEach(r => count(r.cells.conlang));
+    lang.tables.find(x => x.id === 'lexicon')?.rows.forEach(r => count(r.cells.sentence));
+    return counts;
+  }
+
   // Split text into words and the separators between them. Apostrophes and hyphens stay inside words.
   const SEPARATOR = /([\s.,!?;:"“”()\[\]{}…«»¿¡]+)/u;
   function words(text) {
     return text.split(SEPARATOR).filter(s => s !== '').map(s => ({ text: s, word: !SEPARATOR.test(s) }));
   }
 
-  return { inventory, segment, lexicon, glosses, words };
+  return { inventory, segment, lexicon, glosses, usage, words };
 })();

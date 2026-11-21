@@ -56,6 +56,17 @@ const Sheet = (() => {
     }).join('');
   }
 
+  // Lexicon Word cells: a small circle with how many times the word is used elsewhere.
+  function paintUsage(wrap, text, ctx) {
+    const badge = wrap.querySelector('.usage');
+    if (!badge) return;
+    const word = text.trim().toLowerCase();
+    const n = word ? ctx.usage().get(word) || 0 : 0;
+    badge.hidden = !word;
+    badge.textContent = n;
+    badge.title = `Used ${n} time${n === 1 ? '' : 's'} in Phrases and In a Sentence`;
+  }
+
   function render(container, langId, tableId, ctx) {
     const t = Store.table(langId, tableId);
     const table = document.createElement('table');
@@ -134,6 +145,7 @@ const Sheet = (() => {
       const view = document.activeElement === input ? 'text' : viewOf(t.id, col.id);
       wrap.dataset.view = view;
       paintWord(overlay, input.value, ctx, type === 'phrase', view);
+      paintUsage(wrap, input.value, ctx);
       overlay.scrollLeft = input.scrollLeft;
     };
     input.addEventListener('input', () => {
@@ -143,13 +155,19 @@ const Sheet = (() => {
     if (type === 'text') return input;
     wrap = document.createElement('div');
     wrap.dataset.table = t.id;
-    wrap.dataset.col = col.id;
+    wrap.dataset.column = col.id;
     wrap.className = 'word';
     if (type === 'phrase') wrap.dataset.lexicon = '1';
     overlay = document.createElement('div');
     overlay.className = 'word-overlay';
     overlay.setAttribute('aria-hidden', 'true');
     wrap.append(overlay, input);
+    if (t.id === 'lexicon' && col.id === 'word') {
+      const badge = document.createElement('span');
+      badge.className = 'usage';
+      wrap.classList.add('has-usage');
+      wrap.appendChild(badge);
+    }
     input.addEventListener('scroll', repaint);
     input.addEventListener('focus', repaint);
     input.addEventListener('blur', repaint);
@@ -249,9 +267,10 @@ const Sheet = (() => {
   function repaintWords(root, ctx) {
     root.querySelectorAll('.word').forEach(w => {
       const input = w.querySelector('input');
-      const view = document.activeElement === input ? 'text' : viewOf(w.dataset.table, w.dataset.col);
+      const view = document.activeElement === input ? 'text' : viewOf(w.dataset.table, w.dataset.column);
       w.dataset.view = view;
       paintWord(w.querySelector('.word-overlay'), input.value, ctx, !!w.dataset.lexicon, view);
+      paintUsage(w, input.value, ctx);
     });
   }
 
