@@ -51,7 +51,40 @@ const Parse = (() => {
     return out;
   }
 
-  // Inflected forms from the Inflection tab, mapped to their base word (both lowercased).
+  const lexiconRow = (lang, word) => lang.tables.find(x => x.id === 'lexicon')?.rows
+    .find(r => (r.cells.word || '').trim().toLowerCase() === word.toLowerCase());
+
+  // Named inflections: words in the Inflection tab given an Inflection Name, used as models for other words.
+  // The model's stem is what its default form (the Word) and all its inflected forms share at the start;
+  // the rest of each form is its ending. E.g. vivir / vivo / vives: stem "viv", default ending "ir", endings "o", "es".
+  function patterns(lang) {
+    const t = lang.tables.find(x => x.id === 'inflections');
+    return groups(t?.rows || [], 'word').filter(g => (g.rows[0].row.cells.pattern || '').trim()).map(g => {
+      const model = g.key.toLowerCase();
+      const forms = g.rows.map(({ row }) => ({ form: (row.cells.form || '').trim(), inflected: (row.cells.inflected || '').trim().toLowerCase() }))
+        .filter(f => f.inflected);
+      let stem = model;
+      for (const f of forms) while (!f.inflected.startsWith(stem)) stem = stem.slice(0, -1);
+      return {
+        name: g.rows[0].row.cells.pattern.trim(),
+        model,
+        pos: [].concat(lexiconRow(lang, model)?.cells.pos || []),
+        ending: model.slice(stem.length),
+        forms: forms.map(f => ({ form: f.form, ending: f.inflected.slice(stem.length) })),
+      };
+    });
+  }
+
+  // The forms a word gets by following a named inflection: its default ending swapped for each form's ending.
+  // A word that doesn't end in the model's default ending keeps all of its letters as the stem.
+  function follow(word, pattern) {
+    const w = word.trim().toLowerCase();
+    const stem = pattern.ending && w.endsWith(pattern.ending) ? w.slice(0, -pattern.ending.length) : w;
+    return pattern.forms.map(f => ({ form: f.form, inflected: stem + f.ending }));
+  }
+
+  // Inflected forms mapped to their base word (both lowercased): the forms written out in the Inflection tab,
+  // plus the forms of every Lexicon word that follows a named inflection.
   function inflections(lang) {
     const t = lang.tables.find(x => x.id === 'inflections');
     const map = new Map();
@@ -60,6 +93,12 @@ const Parse = (() => {
         const form = (row.cells.inflected || '').trim().toLowerCase();
         if (form && !map.has(form)) map.set(form, g.key.toLowerCase());
       }
+    }
+    const byName = new Map(patterns(lang).map(p => [p.name.toLowerCase(), p]));
+    for (const r of lang.tables.find(x => x.id === 'lexicon')?.rows || []) {
+      const word = (r.cells.word || '').trim().toLowerCase();
+      const p = word && byName.get((r.cells.inflection || '').toLowerCase());
+      if (p) for (const f of follow(word, p)) if (!map.has(f.inflected)) map.set(f.inflected, word);
     }
     return map;
   }
@@ -118,5 +157,5 @@ const Parse = (() => {
     return text.split(SEPARATOR).filter(s => s !== '').map(s => ({ text: s, word: !SEPARATOR.test(s) }));
   }
 
-  return { inventory, segment, groups, inflections, inflectionForms, lexicon, glosses, usage, words };
+  return { inventory, segment, groups, patterns, follow, inflections, inflectionForms, lexicon, glosses, usage, words };
 })();

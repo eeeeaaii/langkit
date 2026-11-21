@@ -119,6 +119,7 @@ const Sheet = (() => {
       if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx));
       else if (type === 'pos') td.appendChild(posCell(t, row, col, value, write));
       else if (type === 'posOne') td.appendChild(posSelectCell(t, row, col, value, write));
+      else if (type === 'inflection') td.appendChild(inflectionCell(t, row, col, value, write, ctx));
       else if (type === 'diphthong') td.appendChild(diphthongCell(t, row, col, value, write));
       else td.appendChild(phonemeCell(t, row, col, value, type, write));
       tr.appendChild(td);
@@ -273,6 +274,28 @@ const Sheet = (() => {
   }
   const TRASH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M3.8 4l.7 9.5h7l.7-9.5M6.5 6.5v4.5M9.5 6.5v4.5"/></svg>';
   // One part of speech, from a dropdown. Empty means "same as the row above".
+  // Lexicon: which named inflection the word follows. Offers the inflections whose model word shares a part
+  // of speech with this word (all of them if this word has no part of speech yet). Hover shows the forms.
+  function inflectionCell(t, row, col, value, write, ctx) {
+    const sel = document.createElement('select');
+    sel.className = 'pos-select';
+    sel.dataset.col = col.id;
+    sel.setAttribute('aria-label', col.name);
+    const fill = () => {
+      const pos = [].concat(row?.cells.pos || []);
+      const all = ctx.patterns();
+      const names = [...new Set(all.filter(p => !pos.length || p.pos.some(x => pos.includes(x))).map(p => p.name))];
+      if (value && !names.includes(value)) names.push(value);
+      sel.innerHTML = ['', ...names].map(o => `<option value="${esc(o)}"${o === (value || '') ? ' selected' : ''}>${esc(o)}</option>`).join('');
+      const p = value && row?.cells.word && all.find(x => x.name.toLowerCase() === value.toLowerCase());
+      sel.title = p ? Parse.follow(row.cells.word, p).map(f => `${f.form}: ${f.inflected}`).join('\n') : '';
+    };
+    fill();
+    sel.addEventListener('focus', fill);
+    sel.onchange = () => write(col.id, sel.value || undefined, { focus: {} });
+    return sel;
+  }
+
   function posSelectCell(t, row, col, value, write) {
     const sel = document.createElement('select');
     sel.className = 'pos-select';

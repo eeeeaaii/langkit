@@ -38,6 +38,7 @@ const Store = (() => {
       { id: 'word', name: 'Word', type: 'word' },
       { id: 'english', name: 'English', type: 'text' },
       { id: 'pos', name: 'Part of Speech', type: 'pos' },
+      { id: 'inflection', name: 'Inflection', type: 'inflection' },
       { id: 'note', name: 'Note', type: 'text' },
       { id: 'sentence', name: 'In a Sentence', type: 'word' },
       { id: 'sentenceTranslation', name: 'Sentence Translation', type: 'text' },
@@ -48,8 +49,10 @@ const Store = (() => {
       { id: 'notes', name: 'Notes', type: 'text' },
     ] },
     // Inflections: a word, then one row per form. Rows with an empty Word belong to the word above.
+    // Giving the word an Inflection Name makes it a model: other words of its part of speech can follow it.
     { id: 'inflections', name: 'Inflection', columns: () => [
       { id: 'word', name: 'Word', type: 'word' },
+      { id: 'pattern', name: 'Inflection Name', type: 'text' },
       { id: 'form', name: 'Form', type: 'text' },
       { id: 'inflected', name: 'Inflected Form', type: 'word' },
     ] },
