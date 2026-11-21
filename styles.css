@@ -108,9 +108,9 @@ button.ipa-cell.current { background:var(--accent); color:#fff; }
 table.grid th { white-space:nowrap; }
 
 /* Letters with no phoneme: yellow-green. Words not in the lexicon: reddish-orange. Both lines are 2px. */
-:root { --nophoneme:#94c100; --nophoneme-text:#5c7a00; --missing:#f0531c; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --nophoneme:#b5e61d; --nophoneme-text:#c6ef4a; --missing:#ff7a45; } }
-:root[data-theme="dark"] { --nophoneme:#b5e61d; --nophoneme-text:#c6ef4a; --missing:#ff7a45; }
+:root { --nophoneme:#f0531c; --nophoneme-text:#c23a0c; --missing:#8e44d6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --nophoneme:#ff7a45; --nophoneme-text:#ff9a70; --missing:#b57bf0; } }
+:root[data-theme="dark"] { --nophoneme:#ff7a45; --nophoneme-text:#ff9a70; --missing:#b57bf0; }
 .word-overlay .missing { padding-bottom:6px; background:linear-gradient(var(--missing), var(--missing)) left bottom / 100% 2px no-repeat; }
 
 /* Part of speech multiselect */
