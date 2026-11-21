@@ -8,22 +8,38 @@
 </head>
 <body>
   <header>
-    <h1>LangKit</h1>
+    <h1><a href="#">LangKit</a><span id="crumb"></span></h1>
     <div class="toolbar">
-      <input id="search" type="search" placeholder="Search phrases…" aria-label="Search">
-      <button id="add-row" class="primary">+ Add row</button>
+      <span id="sheet-tools" hidden>
+        <input id="search" type="search" placeholder="Search…" aria-label="Search">
+      </span>
       <button id="export">Export</button>
       <label class="button">Import<input id="import" type="file" accept=".json" hidden></label>
     </div>
   </header>
-  <main>
+
+  <main id="home" hidden>
+    <section class="card">
+      <h2>Create a language</h2>
+      <form id="create-form">
+        <input id="lang-name" placeholder="Language name, e.g. Klingon" aria-label="Language name" required autocomplete="off">
+        <button class="primary" type="submit">Create</button>
+      </form>
+    </section>
+    <section id="lang-list-section" hidden>
+      <h2>Your languages</h2>
+      <ul id="lang-list"></ul>
+    </section>
+  </main>
+
+  <main id="sheet-view" hidden>
     <table id="sheet">
       <thead></thead>
       <tbody></tbody>
     </table>
-    <p id="empty" hidden>No rows yet. Click <b>+ Add row</b> to start your lexicon.</p>
     <p id="status"></p>
   </main>
+
   <script src="store.js"></script>
   <script src="app.js"></script>
 </body>
