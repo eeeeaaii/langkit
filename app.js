@@ -93,7 +93,7 @@ $('#create-form').onsubmit = e => {
 const ctx = { inventory: () => Parse.inventory(Store.language(langId)) };
 function renderLanguage() {
   Sheet.render($('#phrases-table'), langId, 'phrases', ctx);
-  for (const id of ['consonants', 'vowels', 'diphthongs']) Sheet.render($(`#${id}-table`), langId, id, ctx);
+  for (const id of ['lexicon', 'consonants', 'vowels', 'diphthongs']) Sheet.render($(`#${id}-table`), langId, id, ctx);
 }
 
 // ---------- React to changes ----------

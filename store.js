@@ -34,6 +34,14 @@ const Store = (() => {
       { id: 'phoneme', name: 'Phoneme', type: 'vowel' },
       { id: 'notes', name: 'Notes', type: 'text' },
     ] },
+    { id: 'lexicon', name: 'Lexicon', columns: () => [
+      { id: 'word', name: 'Word', type: 'word' },
+      { id: 'english', name: 'English', type: 'text' },
+      { id: 'pos', name: 'Part of Speech', type: 'text' },
+      { id: 'note', name: 'Note', type: 'text' },
+      { id: 'sentence', name: 'In a Sentence', type: 'word' },
+      { id: 'sentenceTranslation', name: 'Sentence Translation', type: 'text' },
+    ] },
     { id: 'diphthongs', name: 'Diphthongs', columns: () => [
       { id: 'orthography', name: 'English Orthography', type: 'text' },
       { id: 'phoneme', name: 'Phoneme', type: 'diphthong' },

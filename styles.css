@@ -97,3 +97,7 @@ button.ipa-cell.current { background:var(--accent); color:#fff; }
 @media (prefers-reduced-motion: reduce) { .playing::after { animation:none; } }
 .phon.playing::after, .phon-multi.playing::after, .phon-part.playing::after { top:50%; right:6px; width:14px; height:14px; margin-top:-7px; }
 .phon-part.playing::after { right:-14px; }
+#tab-lexicon table.grid { max-width:none; }
+#tab-lexicon th[data-col="word"], #tab-lexicon th[data-col="english"] { width:13%; }
+#tab-lexicon th[data-col="pos"] { width:9%; }
+table.grid th { white-space:nowrap; }
