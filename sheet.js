@@ -6,8 +6,18 @@ const Sheet = (() => {
 
   // Paint a word cell's overlay: letters with no phoneme are marked, and (for phrases)
   // whole words that are not in the lexicon.
-  const letters = (text, inventory) => Parse.segment(text, inventory)
-    .map(s => s.unknown ? `<span class="unknown">${esc(s.text)}</span>` : esc(s.text)).join('');
+  // Consecutive letters with no phoneme share one span, so they get one continuous line.
+  const letters = (text, inventory) => {
+    let html = '', run = '';
+    const flush = () => { if (run) html += `<span class="unknown">${esc(run)}</span>`; run = ''; };
+    for (const s of Parse.segment(text, inventory)) {
+      if (s.unknown) { run += s.text; continue; }
+      flush();
+      html += esc(s.text);
+    }
+    flush();
+    return html;
+  };
   function paintWord(overlay, text, ctx, checkLexicon) {
     const inventory = ctx.inventory();
     if (!checkLexicon) { overlay.innerHTML = letters(text, inventory); return; }
