@@ -125,7 +125,7 @@ const Sheet = (() => {
     const del = document.createElement('td');
     del.className = 'act';
     if (row) {
-      del.innerHTML = '<button title="Delete row" aria-label="Delete row" tabindex="-1">×</button>';
+      del.innerHTML = `<button class="del" title="Delete row" aria-label="Delete row" tabindex="-1">${TRASH}</button>`;
       del.firstChild.onclick = () => Store.deleteRow(langId, t.id, row.id);
     }
     tr.appendChild(del);
@@ -247,6 +247,7 @@ const Sheet = (() => {
     b.onclick = () => Picker.openList(b, POS, list, next => write(col.id, next.length ? next : undefined, { focus: {} }));
     return b;
   }
+  const TRASH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M3.8 4l.7 9.5h7l.7-9.5M6.5 6.5v4.5M9.5 6.5v4.5"/></svg>';
   const POS = ['noun', 'pronoun', 'verb', 'adjective', 'adverb', 'preposition', 'postposition', 'conjunction', 'determiner', 'numeral', 'particle', 'interjection'];
 
   // Enter / arrows move up and down within a column, like a spreadsheet.
