@@ -20,4 +20,19 @@ td input:focus { outline:2px solid var(--accent); outline-offset:-2px; }
 .act { width:40px; text-align:center; }
 .act button { border:0; background:none; color:var(--muted); font-size:18px; padding:4px 8px; }
 .act button:hover { color:#d9480f; }
-#empty, #status { color:var(--muted); }
+#status { color:var(--muted); }
+h1 a { color:inherit; text-decoration:none; }
+#crumb { font-weight:400; color:var(--muted); }
+#sheet-tools { display:contents; }
+h2 { font-size:16px; margin:0 0 12px; }
+.card { max-width:520px; padding:20px; border:1px solid var(--line); border-radius:10px; background:var(--cell); margin-bottom:24px; }
+#create-form { display:flex; gap:8px; }
+#lang-name { flex:1; font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+#lang-list { list-style:none; padding:0; margin:0; max-width:520px; }
+#lang-list li { display:flex; gap:12px; align-items:baseline; padding:10px 0; border-bottom:1px solid var(--line); }
+#lang-list a { color:var(--accent); font-weight:600; text-decoration:none; font-size:16px; }
+.muted { color:var(--muted); flex:1; }
+button.link { border:0; background:none; color:var(--muted); padding:0; }
+button.link:hover { color:#d9480f; }
+tr.blank .num { opacity:.4; }
+#sheet-tools[hidden] { display:none; }

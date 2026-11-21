@@ -1,9 +1,55 @@
-const TABLE = 'phrases';
 const $ = s => document.querySelector(s);
 const thead = $('#sheet thead'), tbody = $('#sheet tbody');
+let langId = null;
 
-function render(focus) {
-  const t = Store.table(TABLE);
+// ---- Routing: "#" is the home screen, "#/lang/<id>" is a language's sheet ----
+function route() {
+  const m = location.hash.match(/^#\/lang\/(\w+)/);
+  langId = m && Store.language(m[1]) ? m[1] : null;
+  $('#home').hidden = !!langId;
+  $('#sheet-view').hidden = !langId;
+  $('#sheet-tools').hidden = !langId;
+  $('#search').value = '';
+  if (langId) {
+    $('#crumb').textContent = ' / ' + Store.language(langId).name;
+    document.title = Store.language(langId).name + ' · LangKit';
+    renderSheet();
+    tbody.querySelector('tr:last-child input')?.focus();
+  } else {
+    $('#crumb').textContent = '';
+    document.title = 'LangKit';
+    renderHome();
+  }
+}
+
+// ---- Home: create a language, list existing ones ----
+function renderHome() {
+  const langs = Store.languages();
+  $('#lang-list-section').hidden = !langs.length;
+  $('#lang-list').innerHTML = '';
+  langs.forEach(lang => {
+    const li = document.createElement('li');
+    const n = lang.tables[0].rows.length;
+    li.innerHTML = `<a href="#/lang/${lang.id}">${esc(lang.name)}</a><span class="muted">${n} ${n === 1 ? 'entry' : 'entries'}</span><button class="link" title="Delete language">Delete</button>`;
+    li.querySelector('button').onclick = () => {
+      if (confirm(`Delete ${lang.name} and all its entries?`)) { Store.deleteLanguage(lang.id); renderHome(); }
+    };
+    $('#lang-list').appendChild(li);
+  });
+  $('#lang-name').focus();
+}
+
+$('#create-form').onsubmit = e => {
+  e.preventDefault();
+  const name = $('#lang-name').value.trim();
+  if (!name) return;
+  $('#lang-name').value = '';
+  location.hash = '#/lang/' + Store.createLanguage(name).id;
+};
+
+// ---- Sheet: one row per entry, plus an always-empty row at the bottom ----
+function renderSheet(focus) {
+  const t = Store.table(langId);
   const q = $('#search').value.trim().toLowerCase();
 
   thead.innerHTML = '<tr><th class="num">#</th>' +
@@ -13,59 +59,60 @@ function render(focus) {
   const rows = t.rows.filter(r => !q ||
     t.columns.some(c => (r.cells[c.id] || '').toLowerCase().includes(q)));
 
-  rows.forEach((row, i) => {
-    const tr = document.createElement('tr');
-    tr.dataset.id = row.id;
-    tr.innerHTML = `<td class="num">${i + 1}</td>`;
-    t.columns.forEach(col => {
-      const td = document.createElement('td');
-      const input = document.createElement('input');
-      input.value = row.cells[col.id] || '';
-      input.dataset.col = col.id;
-      input.setAttribute('aria-label', col.name);
-      input.addEventListener('input', () => Store.updateCell(TABLE, row.id, col.id, input.value));
-      input.addEventListener('keydown', e => onKey(e, tr, col.id));
-      td.appendChild(input);
-      tr.appendChild(td);
-    });
-    const del = document.createElement('td');
-    del.className = 'act';
-    del.innerHTML = '<button title="Delete row" aria-label="Delete row">×</button>';
-    del.firstChild.onclick = () => { Store.deleteRow(TABLE, row.id); render(); };
-    tr.appendChild(del);
-    tbody.appendChild(tr);
-  });
+  rows.forEach((row, i) => tbody.appendChild(rowEl(t, row, i + 1)));
+  if (!q) tbody.appendChild(rowEl(t, null, t.rows.length + 1)); // the empty row
 
-  $('#empty').hidden = t.rows.length > 0;
-  $('#status').textContent = t.rows.length
-    ? `${rows.length} of ${t.rows.length} rows` + (q ? ' match' : '') : '';
+  $('#status').textContent = q ? `${rows.length} of ${t.rows.length} entries match` : '';
 
-  if (focus) tbody.querySelector(`tr[data-id="${focus.row}"] input[data-col="${focus.col}"]`)?.focus();
+  if (focus) {
+    const input = tbody.querySelector(`tr[data-id="${focus.row}"] input[data-col="${focus.col}"]`);
+    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  }
 }
 
-// Spreadsheet-style keys: Enter moves down (adding a row at the end), arrows move between rows.
+function rowEl(t, row, num) {
+  const tr = document.createElement('tr');
+  if (row) tr.dataset.id = row.id; else tr.className = 'blank';
+  tr.innerHTML = `<td class="num">${num}</td>`;
+  t.columns.forEach(col => {
+    const td = document.createElement('td');
+    const input = document.createElement('input');
+    input.value = row ? row.cells[col.id] || '' : '';
+    input.dataset.col = col.id;
+    input.setAttribute('aria-label', col.name);
+    input.addEventListener('input', () => {
+      if (row) return Store.updateCell(langId, row.id, col.id, input.value);
+      // Typing in the empty row turns it into a real row and adds a fresh empty row below.
+      const created = Store.addRow(langId, { [col.id]: input.value });
+      renderSheet({ row: created.id, col: col.id });
+    });
+    input.addEventListener('keydown', e => onKey(e, tr, col.id));
+    td.appendChild(input);
+    tr.appendChild(td);
+  });
+  const del = document.createElement('td');
+  del.className = 'act';
+  if (row) {
+    del.innerHTML = '<button title="Delete row" aria-label="Delete row" tabindex="-1">×</button>';
+    del.firstChild.onclick = () => { Store.deleteRow(langId, row.id); renderSheet(); };
+  }
+  tr.appendChild(del);
+  return tr;
+}
+
+// Spreadsheet-style keys: Enter / arrows move up and down within a column.
 function onKey(e, tr, col) {
   let target;
-  if (e.key === 'Enter' || e.key === 'ArrowDown') {
-    target = tr.nextElementSibling;
-    if (!target && e.key === 'Enter') return addRow(col);
-  } else if (e.key === 'ArrowUp') {
-    target = tr.previousElementSibling;
-  } else return;
+  if (e.key === 'Enter' || e.key === 'ArrowDown') target = tr.nextElementSibling;
+  else if (e.key === 'ArrowUp') target = tr.previousElementSibling;
+  else return;
   e.preventDefault();
   target?.querySelector(`input[data-col="${col}"]`)?.focus();
 }
 
-function addRow(col) {
-  $('#search').value = '';
-  const row = Store.addRow(TABLE);
-  render({ row: row.id, col: col || Store.table(TABLE).columns[0].id });
-}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-function esc(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-
-$('#add-row').onclick = () => addRow();
-$('#search').oninput = () => render();
+$('#search').oninput = () => renderSheet();
 $('#export').onclick = () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([Store.exportJSON()], { type: 'application/json' }));
@@ -75,9 +122,10 @@ $('#export').onclick = () => {
 $('#import').onchange = async e => {
   const file = e.target.files[0];
   if (!file) return;
-  try { Store.importJSON(await file.text()); render(); }
-  catch (err) { $('#status').textContent = 'Import failed: ' + err.message; }
+  try { Store.importJSON(await file.text()); location.hash = ''; route(); }
+  catch (err) { alert('Import failed: ' + err.message); }
   e.target.value = '';
 };
 
-render();
+window.addEventListener('hashchange', route);
+route();
