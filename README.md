@@ -4,7 +4,7 @@ A spreadsheet-style tool for building a constructed language.
 
 Create a language, then work in its tabs:
 
-- **Phrases**: English, your language, and notes. Words in your language are checked against the phonology as you type; letters with no phoneme are underlined in orange, and words that aren't in the Lexicon get a pink underline (both can show at once).
+- **Phrases**: English, your language, and notes. Words in your language are checked against the phonology as you type; letters with no phoneme are underlined in yellow-green, and words that aren't in the Lexicon get a reddish-orange underline (both can show at once).
 - **Phonology**: Consonants, Vowels and Diphthongs tables. Type a spelling under English Orthography, then click the Phoneme cell to pick from an IPA chart (click to choose, right-click to hear). Diphthongs use + to add more vowels.
 - **Lexicon**: Word, English, Part of Speech (pick one or more standard parts of speech), Note, In a Sentence and Sentence Translation. Word and In a Sentence are checked against the phonology like the Phrases language column.
 
