@@ -77,5 +77,34 @@ const Picker = (() => {
     });
   }
 
-  return { open, close, isOpen: () => !!el };
+  // A checklist popup for multiselect cells. onChange gets the full new selection after each click,
+  // and the popup stays open until you click outside it or press Escape.
+  function openList(anchorEl, options, selected, onChange) {
+    close();
+    anchor = anchorEl;
+    let current = selected.slice();
+    el = document.createElement('div');
+    el.className = 'ipa-popup list-popup';
+    el.setAttribute('role', 'dialog');
+    el.innerHTML = options.map(o => `<label><input type="checkbox" value="${o}"${current.includes(o) ? ' checked' : ''}> ${o}</label>`).join('');
+    document.body.appendChild(el);
+    el.addEventListener('change', e => {
+      const v = e.target.value;
+      current = e.target.checked ? options.filter(o => o === v || current.includes(o)) : current.filter(o => o !== v);
+      onChange(current.slice());
+    });
+    const r = anchorEl.getBoundingClientRect();
+    const h = el.offsetHeight;
+    let top = r.bottom + 4;
+    if (top + h > window.innerHeight - 8 && r.top - h - 4 > 8) top = r.top - h - 4;
+    el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - el.offsetWidth - 8)) + window.scrollX + 'px';
+    el.style.top = Math.max(8, top) + window.scrollY + 'px';
+    el.querySelector('input')?.focus();
+    setTimeout(() => {
+      document.addEventListener('mousedown', outside, true);
+      document.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  return { open, openList, close, isOpen: () => !!el };
 })();

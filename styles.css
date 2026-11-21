@@ -50,7 +50,7 @@ th[data-col="notes"] { width:40%; }
 .word input { position:relative; color:transparent; caret-color:var(--fg); }
 .word input::selection { color:transparent; background:color-mix(in srgb, var(--accent) 30%, transparent); }
 .word-overlay { position:absolute; inset:0; padding:2px 6px; line-height:20px; white-space:pre; overflow:hidden; pointer-events:none; color:var(--fg); }
-.word-overlay .unknown { color:var(--warn); text-decoration:underline; text-decoration-color:var(--warn); text-underline-offset:3px; }
+.word-overlay .unknown { color:var(--warn); text-decoration:underline 1.5px var(--warn); text-underline-offset:1px; text-decoration-skip-ink:none; }
 
 /* Phoneme cells */
 .phon { width:100%; min-height:24px; border:0; border-radius:0; background:none; text-align:left; padding:2px 6px; font:inherit; color:var(--fg); }
@@ -101,3 +101,14 @@ button.ipa-cell.current { background:var(--accent); color:#fff; }
 #tab-lexicon th[data-col="word"], #tab-lexicon th[data-col="english"] { width:13%; }
 #tab-lexicon th[data-col="pos"] { width:9%; }
 table.grid th { white-space:nowrap; }
+
+/* Phrase words that are not in the lexicon: a pink line under the whole word. */
+:root { --missing:#e64980; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --missing:#f783ac; } }
+:root[data-theme="dark"] { --missing:#f783ac; }
+.word-overlay .missing { text-decoration:underline 2px var(--missing); text-underline-offset:5px; text-decoration-skip-ink:none; }
+
+/* Part of speech multiselect */
+.pos { white-space:normal; }
+.list-popup { display:flex; flex-direction:column; gap:2px; padding:6px 10px; min-width:160px; }
+.list-popup label { display:flex; gap:6px; align-items:center; padding:2px 0; cursor:pointer; }

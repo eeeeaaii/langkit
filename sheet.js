@@ -4,10 +4,19 @@ const Sheet = (() => {
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const newId = () => Math.random().toString(36).slice(2, 10);
 
-  // Paint a word cell's overlay: letters with no phoneme are marked.
-  function paintWord(overlay, text, inventory) {
-    overlay.innerHTML = Parse.segment(text, inventory)
-      .map(s => s.unknown ? `<span class="unknown">${esc(s.text)}</span>` : esc(s.text)).join('');
+  // Paint a word cell's overlay: letters with no phoneme are marked, and (for phrases)
+  // whole words that are not in the lexicon.
+  const letters = (text, inventory) => Parse.segment(text, inventory)
+    .map(s => s.unknown ? `<span class="unknown">${esc(s.text)}</span>` : esc(s.text)).join('');
+  function paintWord(overlay, text, ctx, checkLexicon) {
+    const inventory = ctx.inventory();
+    if (!checkLexicon) { overlay.innerHTML = letters(text, inventory); return; }
+    const lexicon = ctx.lexicon();
+    overlay.innerHTML = Parse.words(text).map(w => {
+      if (!w.word) return esc(w.text);
+      const html = letters(w.text, inventory);
+      return lexicon.has(w.text.toLowerCase()) ? html : `<span class="missing" title="Not in the lexicon">${html}</span>`;
+    }).join('');
   }
 
   function render(container, langId, tableId, ctx) {
@@ -31,9 +40,10 @@ const Sheet = (() => {
     tr.innerHTML = `<td class="num">${num}</td>`;
 
     // Write a value into this row, creating the row first if this is the empty row.
+    let createdId = null;
     const write = (colId, value, opts = {}) => {
-      if (row) return Store.updateCell(langId, t.id, row.id, colId, value, opts);
-      const id = newId();
+      if (row || createdId) return Store.updateCell(langId, t.id, row?.id || createdId, colId, value, opts);
+      const id = createdId = newId();
       Store.addRow(langId, t.id, { [colId]: value }, { id, coalesce: `${t.id}:${id}:${colId}`, meta: { focus: { table: t.id, row: id, col: colId, ...opts.focus } } });
     };
 
@@ -42,7 +52,8 @@ const Sheet = (() => {
       const type = Store.columnType(t.id, col.id);
       const value = row ? row.cells[col.id] : undefined;
       td.className = 'c-' + type;
-      if (type === 'text' || type === 'word') td.appendChild(textCell(t, row, col, value, type, write, ctx));
+      if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx));
+      else if (type === 'pos') td.appendChild(posCell(t, row, col, value, write));
       else if (type === 'diphthong') td.appendChild(diphthongCell(t, row, col, value, write));
       else td.appendChild(phonemeCell(t, row, col, value, type, write));
       tr.appendChild(td);
@@ -63,17 +74,18 @@ const Sheet = (() => {
     input.value = value || '';
     input.dataset.col = col.id;
     input.setAttribute('aria-label', col.name);
-    input.spellcheck = type !== 'word';
+    input.spellcheck = type === 'text';
     input.addEventListener('keydown', e => moveKey(e, input));
     let overlay = null;
-    const repaint = () => { if (overlay) { paintWord(overlay, input.value, ctx.inventory()); overlay.scrollLeft = input.scrollLeft; } };
+    const repaint = () => { if (overlay) { paintWord(overlay, input.value, ctx, type === 'phrase'); overlay.scrollLeft = input.scrollLeft; } };
     input.addEventListener('input', () => {
       repaint();
       write(col.id, input.value, { silent: !!row, coalesce: row ? `${t.id}:${row.id}:${col.id}` : undefined, focus: { caret: input.selectionStart } });
     });
-    if (type !== 'word') return input;
+    if (type === 'text') return input;
     const wrap = document.createElement('div');
     wrap.className = 'word';
+    if (type === 'phrase') wrap.dataset.lexicon = '1';
     overlay = document.createElement('div');
     overlay.className = 'word-overlay';
     overlay.setAttribute('aria-hidden', 'true');
@@ -143,6 +155,20 @@ const Sheet = (() => {
     return box;
   }
 
+  // Part of speech: a list of tags chosen from the standard parts of speech.
+  function posCell(t, row, col, value, write) {
+    const list = Array.isArray(value) ? value : value ? [value] : [];
+    const b = document.createElement('button');
+    b.className = 'phon pos';
+    b.dataset.col = col.id;
+    b.textContent = list.join(', ');
+    b.setAttribute('aria-label', col.name + (list.length ? ': ' + list.join(', ') : ''));
+    b.addEventListener('keydown', e => moveKey(e, b));
+    b.onclick = () => Picker.openList(b, POS, list, next => write(col.id, next.length ? next : undefined, { focus: {} }));
+    return b;
+  }
+  const POS = ['noun', 'pronoun', 'verb', 'adjective', 'adverb', 'preposition', 'postposition', 'conjunction', 'determiner', 'numeral', 'particle', 'interjection'];
+
   // Enter / arrows move up and down within a column, like a spreadsheet.
   function moveKey(e, el) {
     const isInput = el.tagName === 'INPUT';
@@ -158,8 +184,8 @@ const Sheet = (() => {
   }
 
   // Repaint every word cell's overlay (after the phonology changes).
-  function repaintWords(root, inventory) {
-    root.querySelectorAll('.word').forEach(w => paintWord(w.querySelector('.word-overlay'), w.querySelector('input').value, inventory));
+  function repaintWords(root, ctx) {
+    root.querySelectorAll('.word').forEach(w => paintWord(w.querySelector('.word-overlay'), w.querySelector('input').value, ctx, !!w.dataset.lexicon));
   }
 
   return { render, repaintWords, esc };

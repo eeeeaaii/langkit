@@ -90,7 +90,10 @@ $('#create-form').onsubmit = e => {
 };
 
 // ---------- A language's tables ----------
-const ctx = { inventory: () => Parse.inventory(Store.language(langId)) };
+const ctx = {
+  inventory: () => Parse.inventory(Store.language(langId)),
+  lexicon: () => Parse.lexicon(Store.language(langId)),
+};
 function renderLanguage() {
   Sheet.render($('#phrases-table'), langId, 'phrases', ctx);
   for (const id of ['lexicon', 'consonants', 'vowels', 'diphthongs']) Sheet.render($(`#${id}-table`), langId, id, ctx);
@@ -100,7 +103,7 @@ function renderLanguage() {
 Store.subscribe(e => {
   if (e.kind === 'do') {
     // Typing in an existing cell: the screen already shows it; just refresh the word highlighting.
-    if (e.silent) { if (langId) Sheet.repaintWords($('#sheet-view'), ctx.inventory()); return; }
+    if (e.silent) { if (langId) Sheet.repaintWords($('#sheet-view'), ctx); return; }
     const focus = e.meta?.focus || focusInfo();
     if (!langId || !Store.language(langId)) { location.hash === '' ? route() : (location.hash = ''); return; }
     renderLanguage();
