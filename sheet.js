@@ -119,6 +119,17 @@ const Sheet = (() => {
       Store.addRow(langId, T, { parent, label }, { id, coalesce: `${T}:${id}:label`, meta: { focus: { table: T, row: id, col: focusCol } } });
       return id;
     };
+    const copyLayers = (from, to) => {
+      const first = kids(from.id)[0];
+      Store.transact('Copy layers', () => {
+        const clone = (srcParent, dstParent) => kids(srcParent).forEach(k => {
+          const id = newId();
+          Store.addRow(langId, T, { parent: dstParent, label: k.cells.label || '' }, { id });
+          clone(k.id, id);
+        });
+        clone(from.id, to.id);
+      }, { meta: { focus: { table: T, row: to.id, col: 'label' } } });
+    };
     const remove = node => {
       const all = [];
       const collect = id => { all.push(id); kids(id).forEach(k => collect(k.id)); };
@@ -147,6 +158,18 @@ const Sheet = (() => {
         next.tabIndex = -1;
         next.onclick = () => add(node.id, '');
         box.appendChild(next);
+        // ↓ copies the layers under the item above this one (same list) to this one.
+        const siblings = kids(node.cells.parent || '');
+        const above = siblings[siblings.indexOf(node) - 1];
+        if (depth > 0 && above && kids(above.id).length) {
+          const copy = document.createElement('button');
+          copy.className = 'layer-next';
+          copy.textContent = '↓';
+          copy.title = `Copy the layers under "${above.cells.label || 'the item above'}" to this`;
+          copy.tabIndex = -1;
+          copy.onclick = () => copyLayers(above, node);
+          box.appendChild(copy);
+        }
       }
       const del = document.createElement('button');
       del.className = 'layer-del';
@@ -336,7 +359,6 @@ const Sheet = (() => {
     input.dataset.col = col.id;
     input.setAttribute('aria-label', col.name);
     input.spellcheck = type === 'text';
-    input.addEventListener('keydown', e => moveKey(e, input));
     let overlay = null, wrap = null, say = null;
     const repaint = () => {
       if (!overlay) return;
@@ -407,7 +429,6 @@ const Sheet = (() => {
     b.dataset.col = col.id;
     b.textContent = value ? `/${value}/` : '';
     b.setAttribute('aria-label', col.name + (value ? ' ' + value : ''));
-    b.addEventListener('keydown', e => moveKey(e, b));
     b.onclick = () => Picker.open(b, type, value, sym => write(col.id, sym || undefined, { focus: {} }));
     b.oncontextmenu = e => { if (value) { e.preventDefault(); Sound.play(value, b); } };
     return b;
@@ -426,8 +447,7 @@ const Sheet = (() => {
       b.className = 'phon';
       b.dataset.col = col.id;
       b.setAttribute('aria-label', col.name);
-      b.addEventListener('keydown', e => moveKey(e, b));
-      b.onclick = () => Picker.open(b, 'vowel', null, sym => sym && set([sym]));
+        b.onclick = () => Picker.open(b, 'vowel', null, sym => sym && set([sym]));
       box.appendChild(b);
       return box;
     }
@@ -439,8 +459,7 @@ const Sheet = (() => {
       b.textContent = v;
       if (i === 0) b.dataset.col = col.id;
       b.title = 'Click to change · right-click to hear';
-      b.addEventListener('keydown', e => moveKey(e, b));
-      b.onclick = () => Picker.open(b, 'vowel', v, sym => {
+        b.onclick = () => Picker.open(b, 'vowel', v, sym => {
         const next = list.slice();
         if (sym) next[i] = sym; else next.splice(i, 1);
         set(next);
@@ -505,19 +524,43 @@ const Sheet = (() => {
   const TRASH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M6 4V2.5h4V4M3.8 4l.7 9.5h7l.7-9.5M6.5 6.5v4.5M9.5 6.5v4.5"/></svg>';
   const POS = ['noun', 'pronoun', 'verb', 'adjective', 'adverb', 'preposition', 'postposition', 'conjunction', 'determiner', 'numeral', 'particle', 'interjection'];
 
-  // Enter / arrows move up and down within a column, like a spreadsheet.
-  function moveKey(e, el) {
-    const isInput = el.tagName === 'INPUT';
+  // Keyboard movement, like Google Sheets / Excel:
+  //   Enter / Shift+Enter: down / up (after Tab-ing across a row, Enter goes back to the column you started in),
+  //   Tab / Shift+Tab: right / left (the browser's own order), arrow up / down: up / down.
+  // "Down" means the nearest cell below that covers the same horizontal spot, so it works across merged cells too.
+  let tabColumn = null; // where a run of Tabs started, for Enter to come back to
+  const cellOf = el => el.closest('td, th');
+  const centerX = el => { const r = cellOf(el).getBoundingClientRect(); return (r.left + r.right) / 2; };
+  function cellNext(table, el, x, dir) {
+    const cur = cellOf(el).getBoundingClientRect();
+    let best = null, bestDist = Infinity;
+    for (const c of table.querySelectorAll('tbody [data-col]')) {
+      if (!/^(INPUT|SELECT|BUTTON)$/.test(c.tagName) || c.disabled || c.offsetParent === null) continue;
+      const r = cellOf(c).getBoundingClientRect();
+      if (x < r.left || x > r.right) continue;
+      const dist = dir > 0 ? r.top - (cur.bottom - 1) : (cur.top + 1) - r.bottom;
+      if (dist >= 0 && dist < bestDist) { best = c; bestDist = dist; }
+    }
+    return best;
+  }
+  document.addEventListener('keydown', e => {
+    const el = e.target;
+    const table = el.closest?.('table.grid');
+    if (!table || e.isComposing || e.altKey || e.ctrlKey || e.metaKey || Picker.isOpen()) return;
+    if (e.key === 'Tab') { if (tabColumn == null) tabColumn = centerX(el); return; }
     let dir = 0;
-    if (e.key === 'ArrowDown' || (isInput && e.key === 'Enter')) dir = 1;
-    else if (e.key === 'ArrowUp') dir = -1;
+    if (e.key === 'Enter' && (el.tagName === 'INPUT' || el.tagName === 'SELECT')) dir = e.shiftKey ? -1 : 1;
+    else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && el.tagName !== 'SELECT') dir = e.key === 'ArrowDown' ? 1 : -1;
     if (!dir) return;
     e.preventDefault();
-    const tr = el.closest('tr');
-    const col = el.closest('td').querySelector('[data-col]')?.dataset.col || el.dataset.col;
-    const target = dir > 0 ? tr.nextElementSibling : tr.previousElementSibling;
-    target?.querySelector(`[data-col="${col}"]`)?.focus();
-  }
+    const x = e.key === 'Enter' && tabColumn != null ? tabColumn : centerX(el);
+    tabColumn = null;
+    const target = cellNext(table, el, x, dir);
+    if (!target) return;
+    target.focus();
+    if (target.tagName === 'INPUT') target.setSelectionRange(target.value.length, target.value.length);
+  });
+  document.addEventListener('mousedown', () => { tabColumn = null; });
 
   // Repaint every word cell's overlay (after the phonology changes).
   function repaintWords(root, ctx) {
