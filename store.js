@@ -48,12 +48,13 @@ const Store = (() => {
       { id: 'phoneme', name: 'Phoneme', type: 'diphthong' },
       { id: 'notes', name: 'Notes', type: 'text' },
     ] },
-    // Inflections: a word, then one row per form. Rows with an empty Word belong to the word above.
-    // Giving the word an Inflection Name makes it a model: other words of its part of speech can follow it.
+    // Inflections: one row per word, linked to its Lexicon entry (lex). Its forms are stored by the id of the
+    // Inflection Types item that ends each path (forms: { itemId: 'vivo' }), so the list of forms and their
+    // names always come from Inflection Types. Other words of the same part of speech can follow it (pattern
+    // is its optional name). legacy: forms from before this layout that matched no Inflection Types path.
     { id: 'inflections', name: 'Inflection', columns: () => [
       { id: 'word', name: 'Word', type: 'word' },
       { id: 'pattern', name: 'Inflection Name', type: 'text' },
-      { id: 'form', name: 'Form', type: 'text' },
       { id: 'inflected', name: 'Inflected Form', type: 'word' },
     ] },
     // Inflection types: a tree per part of speech. Each row is one item: a part of speech (no parent) or a
@@ -87,9 +88,57 @@ const Store = (() => {
     t.columns = [];
   }
 
+  // The paths through a part of speech's Inflection Types tree: [{ id (the last item), label }].
+  function typeLeaves(lang, pos) {
+    const rows = lang.tables.find(x => x.id === 'inflectionTypes')?.rows || [];
+    const kids = id => rows.filter(r => (r.cells.parent || '') === id);
+    const out = [];
+    const walk = (node, path) => {
+      const label = (node.cells.label || '').trim();
+      const here = label ? [...path, label] : path;
+      const under = kids(node.id);
+      if (!under.length) { out.push({ id: node.id, label: here.join(' ') }); return; }
+      under.forEach(k => walk(k, here));
+    };
+    kids('').filter(r => (r.cells.label || '').trim().toLowerCase() === String(pos || '').toLowerCase())
+      .forEach(root => kids(root.id).forEach(k => walk(k, [])));
+    return out;
+  }
+
+  // Inflections used to be rows of word + form name + inflected form (word only on a group's first row).
+  // Turn each word into one row with its forms stored by Inflection Types item. Forms whose name matches
+  // no current path are kept in legacy so nothing is lost.
+  function migrateInflections(lang) {
+    const t = lang.tables.find(x => x.id === 'inflections');
+    if (!t || !t.rows.some(r => 'form' in r.cells || 'inflected' in r.cells)) return;
+    const lexicon = lang.tables.find(x => x.id === 'lexicon')?.rows || [];
+    const out = [];
+    let cur = null;
+    for (const r of t.rows) {
+      const c = r.cells;
+      if (c.lex || (c.word || '').trim()) {
+        const entry = lexicon.find(e => e.id === c.lex) || lexicon.find(e => (e.cells.word || '').trim().toLowerCase() === (c.word || '').trim().toLowerCase());
+        const pos = [].concat(entry?.cells.pos || [])[0];
+        cur = { row: { id: r.id, cells: { word: c.word || '', forms: {} } }, leaves: typeLeaves(lang, pos) };
+        if (c.lex) cur.row.cells.lex = c.lex;
+        if (c.pattern) cur.row.cells.pattern = c.pattern;
+        out.push(cur.row);
+      }
+      if (!cur) continue;
+      const form = (c.form || '').trim(), inflected = (c.inflected || '').trim();
+      if (!inflected) continue;
+      const leaf = cur.leaves.find(l => l.label.toLowerCase() === form.toLowerCase());
+      if (leaf && !cur.row.cells.forms[leaf.id]) cur.row.cells.forms[leaf.id] = inflected;
+      else (cur.row.cells.legacy ||= []).push({ form, inflected });
+    }
+    t.rows = out;
+    t.columns = [];
+  }
+
   // Bring a language up to the current schema: add missing tables and columns, keep everything else.
   function normalize(lang) {
     migrateInflectionTypes(lang);
+    migrateInflections(lang);
     SCHEMA.forEach((spec, ti) => {
       let t = lang.tables.find(x => x.id === spec.id);
       if (!t) { t = { id: spec.id, name: spec.name, columns: [], rows: [] }; lang.tables.splice(ti, 0, t); }
@@ -286,6 +335,19 @@ const Store = (() => {
       const row = table(langId, tableId)?.rows.find(r => r.id === rowId);
       if (!row || same(row.cells[colId], value)) return;
       transact('Edit cell', () => record({ t: 'set', path, value }), opts);
+    },
+    // Set one key of an object-valued cell (e.g. one form in an inflection's forms). An empty value removes the key.
+    setCellKey(langId, tableId, rowId, colId, key, value, opts = {}) {
+      const row = table(langId, tableId)?.rows.find(r => r.id === rowId);
+      if (!row) return;
+      const cur = row.cells[colId];
+      const next = value === '' ? undefined : value;
+      if (same(cur?.[key], next)) return;
+      const path = [...tablePath(langId, tableId), 'rows', { id: rowId }, 'cells', colId];
+      transact('Edit cell', () => {
+        if (!cur || typeof cur !== 'object') record({ t: 'set', path, value: {} });
+        record({ t: 'set', path: [...path, key], value: next });
+      }, opts);
     },
     // Insert rows (given as cell objects) at an index, as part of the current transaction if there is one.
     insertRows(langId, tableId, index, cellsList, label = 'Add rows') {

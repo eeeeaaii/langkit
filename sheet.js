@@ -70,24 +70,107 @@ const Sheet = (() => {
 
   function render(container, langId, tableId, ctx) {
     if (tableId === 'inflectionTypes') return renderLayers(container, langId, ctx);
+    if (tableId === 'inflections') return renderInflections(container, langId, ctx);
     const t = Store.table(langId, tableId);
     const table = document.createElement('table');
     table.className = 'grid';
     table.dataset.table = tableId;
     table.innerHTML = '<thead><tr><th class="num">#</th>' +
       t.columns.map(c => `<th data-col="${c.id}">${esc(c.name)}${viewToggle(tableId, c.id)}</th>`).join('') + '<th class="act"></th></tr></thead>';
+    bindToggles(table, tableId, ctx);
+    const tbody = document.createElement('tbody');
+    t.rows.forEach((row, i) => tbody.appendChild(rowEl(langId, t, row, i + 1, ctx)));
+    tbody.appendChild(rowEl(langId, t, null, t.rows.length + 1, ctx));
+    table.appendChild(tbody);
+    container.replaceChildren(table);
+  }
+
+  function bindToggles(table, tableId, ctx) {
     table.querySelectorAll('.view-toggle button').forEach(b => b.onclick = () => {
       const th = b.closest('th');
       views.set(tableId + ':' + th.dataset.col, b.dataset.view);
       th.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
       repaintWords(table, ctx);
     });
+  }
+
+  // Inflection tab: a block per word. The word (from its Lexicon entry) and its Inflection Name span the block;
+  // there is a row per form of its part of speech, named and ordered by Inflection Types, holding the inflected
+  // form. Forms are stored by the Inflection Types item that ends their path, so renaming, adding or removing
+  // layers there shows up here for every word.
+  function renderInflections(container, langId, ctx) {
+    const T = 'inflections';
+    const t = { id: T };
+    const sets = Parse.inflectionSets(Store.language(langId));
+    const table = document.createElement('table');
+    table.className = 'grid';
+    table.dataset.table = T;
+    table.innerHTML = `<thead><tr><th class="num">#</th><th data-col="word">Word${viewToggle(T, 'word')}</th><th data-col="pattern">Inflection Name</th>` +
+      `<th data-col="form">Form</th><th data-col="inflected">Inflected Form${viewToggle(T, 'inflected')}</th><th class="act"></th></tr></thead>`;
+    bindToggles(table, T, ctx);
     const tbody = document.createElement('tbody');
-    if (GROUPED[tableId]) renderGroups(tbody, langId, t, ctx);
-    else {
-      t.rows.forEach((row, i) => tbody.appendChild(rowEl(langId, t, row, i + 1, ctx)));
-      tbody.appendChild(rowEl(langId, t, null, t.rows.length + 1, ctx));
-    }
+    const td = (cls, span) => { const c = document.createElement('td'); if (cls) c.className = cls; if (span > 1) c.rowSpan = span; return c; };
+    sets.forEach((set, n) => {
+      const lines = [
+        ...set.forms.map(f => ({ key: f.id, label: f.label, value: f.inflected })),
+        ...set.legacy.map((f, i) => ({ legacy: i, label: f.form, value: f.inflected })),
+      ];
+      const span = Math.max(1, lines.length);
+      const first = document.createElement('tr');
+      first.className = 'group-start';
+      first.dataset.row = set.id;
+      const num = td('num', span); num.textContent = n + 1; first.appendChild(num);
+      const word = td('c-word group-head', span);
+      word.appendChild(textCell(t, set.row, { id: 'word', name: 'Word' }, set.key, 'word', () => {}, ctx, true));
+      first.appendChild(word);
+      const name = td('c-text group-head', span);
+      name.appendChild(textCell(t, set.row, { id: 'pattern', name: 'Inflection Name' }, set.row.cells.pattern, 'text',
+        (c, v, o) => Store.updateCell(langId, T, set.id, 'pattern', v, o), ctx));
+      first.appendChild(name);
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.title = 'Remove this word\'s inflection';
+      del.setAttribute('aria-label', del.title);
+      del.tabIndex = -1;
+      del.innerHTML = TRASH;
+      del.onclick = () => Store.deleteRow(langId, T, set.id);
+      if (!lines.length) {
+        const note = td('note');
+        note.colSpan = 2;
+        note.textContent = set.pos ? `No forms yet: add layers under "${set.pos}" in Inflection Types.` : 'Give this word a part of speech in the Lexicon.';
+        first.appendChild(note);
+      }
+      lines.forEach((line, k) => {
+        const tr = k === 0 ? first : document.createElement('tr');
+        if (k) tr.dataset.row = `${set.id}:${line.key ?? 'legacy' + line.legacy}`;
+        else first.dataset.row = `${set.id}:${line.key ?? 'legacy' + line.legacy}`;
+        const label = td('form-name' + (line.key ? '' : ' legacy'));
+        label.textContent = line.label;
+        if (!line.key) label.title = 'This form is no longer in Inflection Types';
+        tr.appendChild(label);
+        const cell = td('c-word');
+        const rowRef = { id: `${set.id}:${line.key ?? 'legacy' + line.legacy}`, cells: {} };
+        cell.appendChild(textCell(t, rowRef, { id: 'inflected', name: line.label }, line.value, 'word', (c, v, o) => {
+          if (line.key) return Store.setCellKey(langId, T, set.id, 'forms', line.key, v, o);
+          const legacy = set.row.cells.legacy.map((f, i) => i === line.legacy ? { ...f, inflected: v } : f);
+          Store.updateCell(langId, T, set.id, 'legacy', legacy, o);
+        }, ctx));
+        tr.appendChild(cell);
+        const act = td('act');
+        if (k === 0) act.appendChild(del);
+        else if (!line.key) {
+          const x = del.cloneNode(true);
+          x.title = 'Remove this old form';
+          x.onclick = () => Store.updateCell(langId, T, set.id, 'legacy', set.row.cells.legacy.filter((f, i) => i !== line.legacy));
+          act.appendChild(x);
+        }
+        tr.appendChild(act);
+        if (k) tbody.appendChild(tr);
+        if (k === 0) tbody.appendChild(first);
+      });
+      if (!lines.length) { const act = td('act'); act.appendChild(del); first.appendChild(act); tbody.appendChild(first); }
+    });
+    if (!sets.length) tbody.insertAdjacentHTML('beforeend', `<tr class="empty-note"><td colspan="6">Words get their inflections from the Lexicon: choose New in a word's Inflection column.</td></tr>`);
     table.appendChild(tbody);
     container.replaceChildren(table);
   }
@@ -114,27 +197,68 @@ const Sheet = (() => {
     const line = i => (lines[i] ||= []);
 
     const newId = () => Math.random().toString(36).slice(2, 10);
+    // Inflections store forms by the item that ends their path. When an item with nothing under it gets a
+    // layer, the forms stored on it move to the first item of the new layer, so nothing typed is lost.
+    const inflRows = () => Store.table(langId, 'inflections')?.rows || [];
+    const moveForms = (from, to) => inflRows().forEach(r => {
+      const v = r.cells.forms?.[from];
+      if (v === undefined) return;
+      Store.setCellKey(langId, 'inflections', r.id, 'forms', to, v);
+      Store.setCellKey(langId, 'inflections', r.id, 'forms', from, '');
+    });
     const add = (parent, label, focusCol = 'label') => {
       const id = newId();
-      Store.addRow(langId, T, { parent, label }, { id, coalesce: `${T}:${id}:label`, meta: { focus: { table: T, row: id, col: focusCol } } });
+      const wasLeaf = parent && !kids(parent).length;
+      Store.transact('Add', () => {
+        Store.addRow(langId, T, { parent, label }, { id });
+        if (wasLeaf) moveForms(parent, id);
+      }, { coalesce: `${T}:${id}:label`, meta: { focus: { table: T, row: id, col: focusCol } } });
       return id;
     };
     const copyLayers = (from, to) => {
-      const first = kids(from.id)[0];
       Store.transact('Copy layers', () => {
+        let firstLeaf = null;
         const clone = (srcParent, dstParent) => kids(srcParent).forEach(k => {
           const id = newId();
           Store.addRow(langId, T, { parent: dstParent, label: k.cells.label || '' }, { id });
-          clone(k.id, id);
+          if (kids(k.id).length) clone(k.id, id); else firstLeaf ||= id;
         });
         clone(from.id, to.id);
+        if (firstLeaf) moveForms(to.id, firstLeaf);
       }, { meta: { focus: { table: T, row: to.id, col: 'label' } } });
     };
+    // Deleting an item deletes everything under it, and the forms every word has stored for those paths.
+    const subtree = node => { const all = []; const walk = id => { all.push(id); kids(id).forEach(k => walk(k.id)); }; walk(node.id); return all; };
+    const affected = node => {
+      const ids = new Set(subtree(node));
+      return inflRows().reduce((n, r) => n + Object.keys(r.cells.forms || {}).filter(k => ids.has(k) && r.cells.forms[k]).length, 0);
+    };
     const remove = node => {
-      const all = [];
-      const collect = id => { all.push(id); kids(id).forEach(k => collect(k.id)); };
-      collect(node.id);
-      Store.transact('Delete', () => all.reverse().forEach(id => Store.deleteRow(langId, T, id)));
+      const ids = subtree(node);
+      const gone = new Set(ids);
+      Store.transact('Delete', () => {
+        inflRows().forEach(r => {
+          const forms = r.cells.forms || {};
+          if (!Object.keys(forms).some(k => gone.has(k))) return;
+          Store.updateCell(langId, 'inflections', r.id, 'forms', Object.fromEntries(Object.entries(forms).filter(([k]) => !gone.has(k))));
+        });
+        ids.reverse().forEach(id => Store.deleteRow(langId, T, id));
+      });
+    };
+    // Ask first, inside the cell (the browser's confirm dialog isn't available everywhere).
+    const confirmRemove = (node, box) => {
+      const n = affected(node);
+      const name = node.cells.label || 'this';
+      const ask = document.createElement('div');
+      ask.className = 'layer-confirm';
+      ask.innerHTML = `<span>Delete “${esc(name)}” and everything under it?${n ? ` This removes ${n} filled-in form${n === 1 ? '' : 's'} from your words.` : ''}</span>`;
+      const yes = Object.assign(document.createElement('button'), { className: 'danger', textContent: 'Delete' });
+      const no = Object.assign(document.createElement('button'), { textContent: 'Cancel' });
+      yes.onclick = () => remove(node);
+      no.onclick = () => ask.replaceWith(box);
+      ask.append(yes, no);
+      box.replaceWith(ask);
+      yes.focus();
     };
 
     // An item: its label (a part of speech dropdown at the first level), its → button if it has no layer yet, and delete.
@@ -157,7 +281,6 @@ const Sheet = (() => {
         next.title = 'Add a layer under this';
         next.tabIndex = -1;
         next.onclick = () => add(node.id, '');
-        box.appendChild(next);
         // ↓ copies the layers under the item above this one (same list) to this one.
         const siblings = kids(node.cells.parent || '');
         const above = siblings[siblings.indexOf(node) - 1];
@@ -170,13 +293,14 @@ const Sheet = (() => {
           copy.onclick = () => copyLayers(above, node);
           box.appendChild(copy);
         }
+        box.appendChild(next);
       }
       const del = document.createElement('button');
       del.className = 'layer-del';
       del.innerHTML = TRASH;
       del.title = depth === 0 ? 'Delete this part of speech and its layers' : 'Delete this and everything under it';
       del.tabIndex = -1;
-      del.onclick = () => remove(node);
+      del.onclick = () => confirmRemove(node, box);
       box.appendChild(del);
       td.appendChild(box);
       line(r).push(td);
@@ -249,60 +373,6 @@ const Sheet = (() => {
       `<button type="button" data-view="${v}" title="${title}" aria-pressed="${v === cur}" tabindex="-1">${label}</button>`).join('') + '</span>';
   }
 
-  // Grouped tables: the head columns are filled once per group (a part of speech, or a word) and the rows
-  // under it hold its forms. In the data, a group is its first row (which has the head) plus the rows after
-  // it with an empty head. On screen each group is a block: the head spans its rows, and an empty row at the
-  // bottom of the block adds another form to that group. The empty row at the very bottom starts a new group.
-  // Words come into the Inflection tab from the Lexicon (its Inflection dropdown), so it has no row for starting one.
-  const filled = v => Array.isArray(v) ? v.length > 0 : !!(v && String(v).trim());
-  const GROUPED = {
-    inflections: { starts: r => filled(r.cells.word) || filled(r.cells.lex), head: ['word', 'pattern'], move: ['lex', 'word', 'pattern'], fromLexicon: true },
-  };
-
-  function renderGroups(tbody, langId, t, ctx) {
-    const spec = GROUPED[t.id];
-    const headCols = t.columns.filter(c => spec.head.includes(c.id));
-    const bodyCols = t.columns.filter(c => !spec.head.includes(c.id));
-    const groups = [];
-    t.rows.forEach((row, i) => {
-      if (spec.starts(row) || !groups.length) groups.push([]);
-      groups[groups.length - 1].push({ row, i });
-    });
-    for (const g of groups) {
-      const last = g[g.length - 1];
-      const addRow = bodyCols.some(c => filled(last.row.cells[c.id]));
-      const span = g.length + (addRow ? 1 : 0);
-      g.forEach(({ row, i }, k) => {
-        const tr = rowEl(langId, t, row, i + 1, ctx, k === 0
-          ? { span: Object.fromEntries(headCols.map(c => [c.id, span])) }
-          : { columns: bodyCols });
-        if (k === 0) tr.classList.add('group-start');
-        tbody.appendChild(tr);
-      });
-      if (addRow) tbody.appendChild(rowEl(langId, t, null, '', ctx, { columns: bodyCols, index: last.i + 1, blankId: 'add-' + g[0].row.id }));
-    }
-    if (spec.fromLexicon) {
-      if (!groups.length) tbody.insertAdjacentHTML('beforeend', `<tr class="empty-note"><td colspan="${t.columns.length + 2}">Words get their inflections from the Lexicon: choose New in a word's Inflection column.</td></tr>`);
-      return;
-    }
-    const start = rowEl(langId, t, null, t.rows.length + 1, ctx, { columns: headCols, filler: bodyCols.length });
-    if (groups.length) start.classList.add('group-start');
-    tbody.appendChild(start);
-  }
-
-  // Delete a row of a grouped table. Deleting a group's first row moves its head onto the next row,
-  // so the rest of the group stays together instead of joining the group above.
-  function deleteGrouped(langId, t, row) {
-    const spec = GROUPED[t.id];
-    const i = t.rows.indexOf(row);
-    const next = t.rows[i + 1];
-    if (!spec.starts(row) || !next || spec.starts(next)) return Store.deleteRow(langId, t.id, row.id);
-    Store.transact('Delete row', () => {
-      spec.move.forEach(c => { if (row.cells[c] !== undefined) Store.updateCell(langId, t.id, next.id, c, row.cells[c]); });
-      Store.deleteRow(langId, t.id, row.id);
-    });
-  }
-
   // g.columns: which columns to draw (default all); g.span: rowspan per column id; g.index: where the empty
   // row inserts its new row (default the end); g.blankId: id for an empty row; g.filler: empty cells to pad with.
   function rowEl(langId, t, row, num, ctx, g = {}) {
@@ -323,12 +393,9 @@ const Sheet = (() => {
       const td = document.createElement('td');
       if (g.span?.[col.id] > 1) { td.rowSpan = g.span[col.id]; td.classList.add('group-head'); }
       const type = Store.columnType(t.id, col.id);
-      let value = row ? row.cells[col.id] : undefined;
-      // Inflection tab: the word is the Lexicon entry's, shown read-only.
-      const linkedWord = t.id === 'inflections' && col.id === 'word';
-      if (linkedWord && row?.cells.lex) value = ctx.lexiconWord(row.cells.lex) ?? value;
+      const value = row ? row.cells[col.id] : undefined;
       td.classList.add('c-' + type);
-      if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx, linkedWord));
+      if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx));
       else if (type === 'posOne') td.appendChild(posSelectCell(t, row, col, value, write));
       else if (type === 'inflection') td.appendChild(inflectionCell(t, row, col, value, write, ctx));
       else if (type === 'diphthong') td.appendChild(diphthongCell(t, row, col, value, write));
@@ -341,7 +408,7 @@ const Sheet = (() => {
     del.className = 'act';
     if (row) {
       del.innerHTML = `<button class="del" title="Delete row" aria-label="Delete row" tabindex="-1">${TRASH}</button>`;
-      del.firstChild.onclick = () => GROUPED[t.id] ? deleteGrouped(langId, t, row) : Store.deleteRow(langId, t.id, row.id);
+      del.firstChild.onclick = () => Store.deleteRow(langId, t.id, row.id);
     }
     tr.appendChild(del);
     return tr;
@@ -369,13 +436,9 @@ const Sheet = (() => {
       say.hidden = !input.value.trim();
       overlay.scrollLeft = input.scrollLeft;
     };
-    // In grouped tables, the first letter typed into an empty cell redraws the table, so a group's
-    // "add a form" row appears (or moves) as soon as its last row gets content.
-    let wasEmpty = !input.value;
     input.addEventListener('input', () => {
       repaint();
-      const silent = !!row && !(GROUPED[t.id] && wasEmpty);
-      wasEmpty = !input.value;
+      const silent = !!row;
       write(col.id, input.value, { silent, coalesce: row ? `${t.id}:${row.id}:${col.id}` : undefined, focus: { caret: input.selectionStart } });
     });
     if (type === 'text') return input;
