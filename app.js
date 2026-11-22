@@ -96,23 +96,20 @@ const ctx = {
   glosses: () => Parse.glosses(Store.language(langId)),
   usage: () => Parse.usage(Store.language(langId)),
   patterns: () => Parse.patterns(Store.language(langId)),
-  lexiconWord: id => Store.table(langId, 'lexicon')?.rows.find(r => r.id === id)?.cells.word,
+  lexiconWord: id => Store.row(langId, 'lexicon', id)?.cells.word,
+  pos: () => Store.rows(langId, 'partsOfSpeech').map(r => ({ id: r.id, name: r.cells.name || '' })),
+  posName: id => Parse.posName(Store.language(langId), id),
   newInflection: lexId => newInflection(lexId),
 };
 
-// "New" in a Lexicon entry's Inflection dropdown: add the word to the Inflection tab (its forms come from
-// Inflection Types for its part of speech), make the entry follow it, and go there to fill it in.
+// "New" in a Lexicon entry's Inflection dropdown: make the word the model of a new inflection (its forms come
+// from Inflection Types for its part of speech) and go to the Inflection tab to fill it in.
 function newInflection(lexId) {
-  const lang = Store.language(langId);
-  const entry = Store.table(langId, 'lexicon').rows.find(r => r.id === lexId);
+  const entry = Store.row(langId, 'lexicon', lexId);
   if (!entry) return;
-  const forms = Parse.inflectionForms(lang, [].concat(entry.cells.pos || [])[0]);
-  const id = Math.random().toString(36).slice(2, 10);
+  const first = Parse.inflectionForms(Store.language(langId), entry.cells.pos)[0];
   showTab('inflection');
-  Store.transact('New inflection', () => {
-    Store.addRow(langId, 'inflections', { lex: lexId, word: entry.cells.word || '', forms: {} }, { id });
-    Store.updateCell(langId, 'lexicon', lexId, 'inflection', id);
-  }, { meta: { focus: { table: 'inflections', row: forms[0] ? `${id}:${forms[0].id}` : id, col: 'inflected' } } });
+  Model.addInflection(langId, lexId, { meta: id => ({ focus: { table: 'inflections', row: first ? `${id}:${first.id}` : id, col: 'inflected' } }) });
 }
 
 function renderLanguage() {

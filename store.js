@@ -1,173 +1,48 @@
-// Data layer: the document, persistence, and the undo/redo engine.
-//
-// Document shape (saved in localStorage):
-//   { version, languages: [{ id, name, tables: [{ id, name, columns: [{id, name}], rows: [{id, cells: {colId: value}}] }] }] }
+// Data layer: the document, persistence, and the undo/redo engine. What the document holds is described
+// in schema.js; this file only knows it as languages > tables > rows > cells.
 //
 // Every change goes through a transaction made of primitive operations (set / insert / remove)
 // on paths into the document. Each operation records what it needs to be reversed, so a
 // transaction can be undone and redone exactly. Path segments are property names, array
 // indexes, or {id} objects that find an array item by its id.
 const Store = (() => {
-  const KEY = 'langkit:v2';
-  const OLD_KEY = 'langkit:v1';
+  const KEY = 'langkit';
+  const OLD_KEYS = ['langkit:v2'];  // where earlier versions saved; read once, then left alone
+  const FIRST_KEY = 'langkit:v1';
   const HISTORY_LIMIT = 500;
   const COALESCE_MS = 1000;
-  const uid = () => Math.random().toString(36).slice(2, 10);
+  const uid = Schema.uid;
   const clone = v => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-  // ---------- Schema ----------
-  // Tables every language has, with their columns. Column types tell the UI how to edit a cell.
-  const SCHEMA = [
-    { id: 'phrases', name: 'Phrases', columns: lang => [
-      { id: 'english', name: 'English', type: 'text' },
-      { id: 'conlang', name: lang.name, type: 'phrase' },
-      { id: 'notes', name: 'Notes', type: 'text' },
-    ] },
-    { id: 'consonants', name: 'Consonants', columns: () => [
-      { id: 'orthography', name: 'English Orthography', type: 'text' },
-      { id: 'phoneme', name: 'Phoneme', type: 'consonant' },
-      { id: 'notes', name: 'Notes', type: 'text' },
-    ] },
-    { id: 'vowels', name: 'Vowels', columns: () => [
-      { id: 'orthography', name: 'English Orthography', type: 'text' },
-      { id: 'phoneme', name: 'Phoneme', type: 'vowel' },
-      { id: 'notes', name: 'Notes', type: 'text' },
-    ] },
-    { id: 'lexicon', name: 'Lexicon', columns: () => [
-      { id: 'word', name: 'Word', type: 'word' },
-      { id: 'english', name: 'English', type: 'text' },
-      { id: 'pos', name: 'Part of Speech', type: 'posOne' },
-      { id: 'inflection', name: 'Inflection', type: 'inflection' },
-      { id: 'note', name: 'Note', type: 'text' },
-      { id: 'sentence', name: 'In a Sentence', type: 'word' },
-      { id: 'sentenceTranslation', name: 'Sentence Translation', type: 'text' },
-    ] },
-    { id: 'diphthongs', name: 'Diphthongs', columns: () => [
-      { id: 'orthography', name: 'English Orthography', type: 'text' },
-      { id: 'phoneme', name: 'Phoneme', type: 'diphthong' },
-      { id: 'notes', name: 'Notes', type: 'text' },
-    ] },
-    // Inflections: one row per word, linked to its Lexicon entry (lex). Its forms are stored by the id of the
-    // Inflection Types item that ends each path (forms: { itemId: 'vivo' }), so the list of forms and their
-    // names always come from Inflection Types. Other words of the same part of speech can follow it (pattern
-    // is its optional name). legacy: forms from before this layout that matched no Inflection Types path.
-    { id: 'inflections', name: 'Inflection', columns: () => [
-      { id: 'word', name: 'Word', type: 'word' },
-      { id: 'pattern', name: 'Inflection Name', type: 'text' },
-      { id: 'inflected', name: 'Inflected Form', type: 'word' },
-    ] },
-    // Inflection types: a tree per part of speech. Each row is one item: a part of speech (no parent) or a
-    // value in a layer under its parent, e.g. verb > indicative > present > 1st > singular.
-    // A part of speech's forms are the paths from it down to each item with nothing under it.
-    { id: 'inflectionTypes', name: 'Inflection Types', columns: () => [
-      { id: 'label', name: 'Label', type: 'text' },
-      { id: 'parent', name: 'Parent', type: 'text' },
-    ] },
-  ];
-
-  const columnType = (tableId, colId) => {
-    const t = SCHEMA.find(s => s.id === tableId);
-    return t?.columns({ name: '' }).find(c => c.id === colId)?.type || 'text';
-  };
-
-  // Inflection Types used to be rows of part of speech + form (part of speech only on a group's first row).
-  // Turn those into the tree: each part of speech an item, each form an item under it.
-  function migrateInflectionTypes(lang) {
-    const t = lang.tables.find(x => x.id === 'inflectionTypes');
-    if (!t || !t.rows.some(r => 'pos' in r.cells || 'form' in r.cells)) return;
-    const rows = [];
-    let root = null;
-    for (const r of t.rows) {
-      const pos = (Array.isArray(r.cells.pos) ? r.cells.pos[0] : r.cells.pos || '').trim();
-      if (pos) { root = { id: r.id, cells: { parent: '', label: pos } }; rows.push(root); }
-      const form = (r.cells.form || '').trim();
-      if (form && root) rows.push({ id: uid(), cells: { parent: root.id, label: form } });
-    }
-    t.rows = rows;
-    t.columns = [];
-  }
-
-  // The paths through a part of speech's Inflection Types tree: [{ id (the last item), label }].
-  function typeLeaves(lang, pos) {
-    const rows = lang.tables.find(x => x.id === 'inflectionTypes')?.rows || [];
-    const kids = id => rows.filter(r => (r.cells.parent || '') === id);
-    const out = [];
-    const walk = (node, path) => {
-      const label = (node.cells.label || '').trim();
-      const here = label ? [...path, label] : path;
-      const under = kids(node.id);
-      if (!under.length) { out.push({ id: node.id, label: here.join(' ') }); return; }
-      under.forEach(k => walk(k, here));
-    };
-    kids('').filter(r => (r.cells.label || '').trim().toLowerCase() === String(pos || '').toLowerCase())
-      .forEach(root => kids(root.id).forEach(k => walk(k, [])));
-    return out;
-  }
-
-  // Inflections used to be rows of word + form name + inflected form (word only on a group's first row).
-  // Turn each word into one row with its forms stored by Inflection Types item. Forms whose name matches
-  // no current path are kept in legacy so nothing is lost.
-  function migrateInflections(lang) {
-    const t = lang.tables.find(x => x.id === 'inflections');
-    if (!t || !t.rows.some(r => 'form' in r.cells || 'inflected' in r.cells)) return;
-    const lexicon = lang.tables.find(x => x.id === 'lexicon')?.rows || [];
-    const out = [];
-    let cur = null;
-    for (const r of t.rows) {
-      const c = r.cells;
-      if (c.lex || (c.word || '').trim()) {
-        const entry = lexicon.find(e => e.id === c.lex) || lexicon.find(e => (e.cells.word || '').trim().toLowerCase() === (c.word || '').trim().toLowerCase());
-        const pos = [].concat(entry?.cells.pos || [])[0];
-        cur = { row: { id: r.id, cells: { word: c.word || '', forms: {} } }, leaves: typeLeaves(lang, pos) };
-        if (c.lex) cur.row.cells.lex = c.lex;
-        if (c.pattern) cur.row.cells.pattern = c.pattern;
-        out.push(cur.row);
-      }
-      if (!cur) continue;
-      const form = (c.form || '').trim(), inflected = (c.inflected || '').trim();
-      if (!inflected) continue;
-      const leaf = cur.leaves.find(l => l.label.toLowerCase() === form.toLowerCase());
-      if (leaf && !cur.row.cells.forms[leaf.id]) cur.row.cells.forms[leaf.id] = inflected;
-      else (cur.row.cells.legacy ||= []).push({ form, inflected });
-    }
-    t.rows = out;
-    t.columns = [];
-  }
-
-  // Bring a language up to the current schema: add missing tables and columns, keep everything else.
-  function normalize(lang) {
-    migrateInflectionTypes(lang);
-    migrateInflections(lang);
-    SCHEMA.forEach((spec, ti) => {
-      let t = lang.tables.find(x => x.id === spec.id);
-      if (!t) { t = { id: spec.id, name: spec.name, columns: [], rows: [] }; lang.tables.splice(ti, 0, t); }
-      spec.columns(lang).forEach((col, ci) => {
-        if (!t.columns.some(c => c.id === col.id)) t.columns.splice(ci, 0, { id: col.id, name: col.name });
-      });
-    });
-    return lang;
-  }
-
-  const newLanguage = name => normalize({ id: uid(), name, tables: [] });
-
   function load() {
-    let db = null;
-    try { db = JSON.parse(localStorage.getItem(KEY)); } catch {}
-    if (!db || !Array.isArray(db.languages)) {
-      db = { version: 3, languages: [] };
+    let raw = null, db = null;
+    for (const key of [KEY, ...OLD_KEYS]) {
+      try { raw = localStorage.getItem(key); db = JSON.parse(raw); } catch { db = null; }
+      if (db && Array.isArray(db.languages)) break;
+      db = null;
+    }
+    if (!db) {
+      db = { version: Schema.VERSION, languages: [] };
       // Carry over rows from the first version (phrase/translation) if there are any.
       try {
-        const rows = JSON.parse(localStorage.getItem(OLD_KEY))?.tables?.[0]?.rows || [];
+        const rows = JSON.parse(localStorage.getItem(FIRST_KEY))?.tables?.[0]?.rows || [];
         if (rows.length) {
-          const lang = newLanguage('My language');
-          lang.tables[0].rows = rows.map(r => ({ id: r.id, cells: { english: r.cells.translation || '', conlang: r.cells.phrase || '' } }));
+          const lang = Schema.newLanguage('My language');
+          lang.tables.find(t => t.id === 'phrases').rows = rows.map(r => ({ id: r.id, cells: { english: r.cells.translation || '', conlang: r.cells.phrase || '' } }));
           db.languages.push(lang);
         }
       } catch {}
+      return db;
     }
-    db.version = 3;
-    db.languages.forEach(normalize);
+    if ((Number(db.version) || 0) < Schema.VERSION) {
+      // Keep the document exactly as it was before bringing it up to date.
+      try { localStorage.setItem(KEY + ':before-v' + Schema.VERSION, raw); } catch {}
+      Schema.migrate(db);
+      try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {}
+    } else {
+      db.languages.forEach(Schema.ensure);
+    }
     return db;
   }
 
@@ -299,13 +174,38 @@ const Store = (() => {
   const table = (langId, tableId) => language(langId)?.tables.find(t => t.id === tableId);
   const tablePath = (langId, tableId) => ['languages', { id: langId }, 'tables', { id: tableId }];
 
+  // Everything that goes when a row is deleted, following the links declared in the schema:
+  // remove: rows to delete (the rows that depend on it first, the row itself last);
+  // clear: fields of surviving rows that pointed at something deleted.
+  function dependents(langId, tableId, rowId) {
+    const seen = new Set(), remove = [], clear = [];
+    const visit = (tId, rId) => {
+      const key = tId + ':' + rId;
+      if (seen.has(key)) return;
+      seen.add(key);
+      for (const spec of Schema.TABLES) for (const [col, [target, rule]] of Object.entries(spec.refs || {})) {
+        if (target !== tId) continue;
+        for (const r of table(langId, spec.id)?.rows || []) {
+          if (r.cells[col] !== rId) continue;
+          if (rule === 'cascade') visit(spec.id, r.id); else clear.push({ table: spec.id, id: r.id, col });
+        }
+      }
+      remove.push({ table: tId, id: rId });
+    };
+    visit(tableId, rowId);
+    return { remove, clear: clear.filter(c => !seen.has(c.table + ':' + c.id)) };
+  }
+
   // ---------- Edits (all undoable) ----------
   return {
-    SCHEMA,
-    columnType,
+    columns: (langId, tableId) => Schema.columns(tableId, language(langId)),
+    columnType: Schema.columnType,
     languages: () => db.languages,
     language,
     table,
+    rows: (langId, tableId) => table(langId, tableId)?.rows || [],
+    row: (langId, tableId, rowId) => table(langId, tableId)?.rows.find(r => r.id === rowId),
+    dependents,
     transact,
     undo,
     redo,
@@ -317,7 +217,7 @@ const Store = (() => {
     subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn); },
 
     createLanguage(name) {
-      const lang = newLanguage(name);
+      const lang = Schema.newLanguage(name);
       transact('Create language', () => record({ t: 'insert', path: ['languages'], value: lang }));
       return lang;
     },
@@ -336,27 +236,17 @@ const Store = (() => {
       if (!row || same(row.cells[colId], value)) return;
       transact('Edit cell', () => record({ t: 'set', path, value }), opts);
     },
-    // Set one key of an object-valued cell (e.g. one form in an inflection's forms). An empty value removes the key.
-    setCellKey(langId, tableId, rowId, colId, key, value, opts = {}) {
-      const row = table(langId, tableId)?.rows.find(r => r.id === rowId);
-      if (!row) return;
-      const cur = row.cells[colId];
-      const next = value === '' ? undefined : value;
-      if (same(cur?.[key], next)) return;
-      const path = [...tablePath(langId, tableId), 'rows', { id: rowId }, 'cells', colId];
-      transact('Edit cell', () => {
-        if (!cur || typeof cur !== 'object') record({ t: 'set', path, value: {} });
-        record({ t: 'set', path: [...path, key], value: next });
+    // Delete a row together with everything that depends on it (see dependents).
+    deleteRow(langId, tableId, rowId, opts = {}) {
+      if (!table(langId, tableId)?.rows.some(r => r.id === rowId)) return;
+      const d = dependents(langId, tableId, rowId);
+      transact('Delete', () => {
+        for (const c of d.clear) record({ t: 'set', path: [...tablePath(langId, c.table), 'rows', { id: c.id }, 'cells', c.col], value: undefined });
+        for (const x of d.remove) {
+          const index = table(langId, x.table).rows.findIndex(r => r.id === x.id);
+          if (index >= 0) record({ t: 'remove', path: [...tablePath(langId, x.table), 'rows'], index });
+        }
       }, opts);
-    },
-    // Insert rows (given as cell objects) at an index, as part of the current transaction if there is one.
-    insertRows(langId, tableId, index, cellsList, label = 'Add rows') {
-      const path = [...tablePath(langId, tableId), 'rows'];
-      transact(label, () => cellsList.forEach((cells, i) => record({ t: 'insert', path, index: index + i, value: { id: uid(), cells } })));
-    },
-    deleteRow(langId, tableId, rowId) {
-      const index = table(langId, tableId).rows.findIndex(r => r.id === rowId);
-      if (index >= 0) transact('Delete row', () => record({ t: 'remove', path: [...tablePath(langId, tableId), 'rows'], index }));
     },
   };
 })();
