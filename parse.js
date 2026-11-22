@@ -39,35 +39,24 @@ const Parse = (() => {
     return out;
   }
 
-  // Rows grouped under a key column that is filled only on a group's first row (like a spreadsheet):
-  // returns [{ key, rows: [{ row, index }] }]. Rows before the first key are left out.
-  function groups(rows, keyCol) {
-    const out = [];
-    rows.forEach((row, index) => {
-      const key = (row.cells[keyCol] || '').trim();
-      if (key) out.push({ key, rows: [] });
-      if (out.length) out[out.length - 1].rows.push({ row, index });
-    });
-    return out;
-  }
-
   const lexiconRow = (lang, word) => lang.tables.find(x => x.id === 'lexicon')?.rows
     .find(r => (r.cells.word || '').trim().toLowerCase() === word.toLowerCase());
 
-  // The words in the Inflection tab, each with its rows of forms. A word's first row links to its Lexicon
-  // entry (lex), so the word shown is always the Lexicon's; older rows may instead have the word typed in.
-  // Returns [{ id (the first row's id), key (the word), rows: [{ row, index }] }].
-  function inflectionGroups(lang) {
+  // The words in the Inflection tab, with their forms in Inflection Types order.
+  // Returns [{ id, row, key (the word, from its Lexicon entry), pos, forms: [{ id, label, inflected }], legacy }].
+  function inflectionSets(lang) {
     const lex = lang.tables.find(x => x.id === 'lexicon')?.rows || [];
-    const out = [];
-    (lang.tables.find(x => x.id === 'inflections')?.rows || []).forEach((row, index) => {
-      if (row.cells.lex || (row.cells.word || '').trim()) {
-        const linked = row.cells.lex && lex.find(r => r.id === row.cells.lex);
-        out.push({ id: row.id, key: ((linked ? linked.cells.word : row.cells.word) || '').trim(), rows: [] });
-      }
-      if (out.length) out[out.length - 1].rows.push({ row, index });
+    return (lang.tables.find(x => x.id === 'inflections')?.rows || []).map(row => {
+      const entry = (row.cells.lex && lex.find(r => r.id === row.cells.lex)) || lexiconRow(lang, row.cells.word || '');
+      const key = ((entry ? entry.cells.word : row.cells.word) || '').trim();
+      const pos = [].concat(entry?.cells.pos || [])[0] || '';
+      const stored = row.cells.forms || {};
+      return {
+        id: row.id, row, key, pos,
+        forms: inflectionForms(lang, pos).map(f => ({ ...f, inflected: (stored[f.id] || '').trim() })),
+        legacy: row.cells.legacy || [],
+      };
     });
-    return out;
   }
 
   // Inflections: every word in the Inflection tab is a model other words of its part of speech can follow.
@@ -75,17 +64,17 @@ const Parse = (() => {
   // The model's stem is what its default form (the Word) and all its inflected forms share at the start;
   // the rest of each form is its ending. E.g. vivir / vivo / vives: stem "viv", default ending "ir", endings "o", "es".
   function patterns(lang) {
-    return inflectionGroups(lang).filter(g => g.key).map(g => {
+    return inflectionSets(lang).filter(g => g.key).map(g => {
       const model = g.key.toLowerCase();
-      const forms = g.rows.map(({ row }) => ({ form: (row.cells.form || '').trim(), inflected: (row.cells.inflected || '').trim().toLowerCase() }))
-        .filter(f => f.inflected);
+      const forms = [...g.forms.map(f => ({ form: f.label, inflected: f.inflected.toLowerCase() })),
+        ...g.legacy.map(f => ({ form: f.form, inflected: (f.inflected || '').trim().toLowerCase() }))].filter(f => f.inflected);
       let stem = model;
       for (const f of forms) while (!f.inflected.startsWith(stem)) stem = stem.slice(0, -1);
       return {
         id: g.id,
-        name: (g.rows[0].row.cells.pattern || '').trim() || 'like ' + g.key,
+        name: (g.row.cells.pattern || '').trim() || 'like ' + g.key,
         model,
-        pos: [].concat(lexiconRow(lang, model)?.cells.pos || []),
+        pos: g.pos ? [g.pos] : [],
         ending: model.slice(stem.length),
         forms: forms.map(f => ({ form: f.form, ending: f.inflected.slice(stem.length) })),
       };
@@ -107,10 +96,10 @@ const Parse = (() => {
   // plus the forms of every Lexicon word that follows an inflection.
   function inflections(lang) {
     const map = new Map();
-    for (const g of inflectionGroups(lang)) {
+    for (const g of inflectionSets(lang)) {
       if (!g.key) continue;
-      for (const { row } of g.rows) {
-        const form = (row.cells.inflected || '').trim().toLowerCase();
+      for (const f of [...g.forms, ...g.legacy]) {
+        const form = (f.inflected || '').trim().toLowerCase();
         if (form && !map.has(form)) map.set(form, g.key.toLowerCase());
       }
     }
@@ -124,8 +113,8 @@ const Parse = (() => {
   }
 
   // The forms defined for a part of speech in Inflection Types (matched ignoring case).
-  // Each form is a path through the part of speech's layers, named by its items in order,
-  // e.g. "indicative present 1st singular".
+  // The forms of a part of speech: each is a path through its Inflection Types layers, identified by the item
+  // that ends it and named by its items in order, e.g. "indicative present 1st singular". [{ id, label }]
   function inflectionForms(lang, pos) {
     const rows = lang.tables.find(x => x.id === 'inflectionTypes')?.rows || [];
     const kids = id => rows.filter(r => (r.cells.parent || '') === id);
@@ -134,10 +123,10 @@ const Parse = (() => {
       const label = (node.cells.label || '').trim();
       const here = label ? [...path, label] : path;
       const under = kids(node.id);
-      if (!under.length) { if (here.length) out.push(here.join(' ')); return; }
+      if (!under.length) { out.push({ id: node.id, label: here.join(' ') }); return; }
       under.forEach(k => walk(k, here));
     };
-    kids('').filter(r => (r.cells.label || '').trim().toLowerCase() === pos.toLowerCase())
+    kids('').filter(r => (r.cells.label || '').trim().toLowerCase() === String(pos || '').toLowerCase())
       .forEach(root => kids(root.id).forEach(k => walk(k, [])));
     return out;
   }
@@ -189,5 +178,5 @@ const Parse = (() => {
     return text.split(SEPARATOR).filter(s => s !== '').map(s => ({ text: s, word: !SEPARATOR.test(s) }));
   }
 
-  return { inventory, segment, groups, inflectionGroups, patterns, findPattern, follow, inflections, inflectionForms, lexicon, glosses, usage, words };
+  return { inventory, segment, inflectionSets, patterns, findPattern, follow, inflections, inflectionForms, lexicon, glosses, usage, words };
 })();

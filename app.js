@@ -32,7 +32,7 @@ function showTab(name) {
   document.querySelectorAll('.tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.id !== 'tab-' + name; });
 }
-document.querySelectorAll('.tabs [role=tab]').forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
+document.querySelectorAll('.tabs [role=tab]').forEach(b => { b.onclick = () => { showTab(b.dataset.tab); if (langId) renderLanguage(); }; });
 
 // ---------- Routing: "#" is the home screen, "#lang-<id>" is a language ----------
 let pendingView = null;
@@ -100,25 +100,21 @@ const ctx = {
   newInflection: lexId => newInflection(lexId),
 };
 
-// "New" in a Lexicon entry's Inflection dropdown: add the word to the Inflection tab with one row per form
-// that Inflection Types defines for its part(s) of speech, make the entry follow it, and go there to fill it in.
+// "New" in a Lexicon entry's Inflection dropdown: add the word to the Inflection tab (its forms come from
+// Inflection Types for its part of speech), make the entry follow it, and go there to fill it in.
 function newInflection(lexId) {
   const lang = Store.language(langId);
   const entry = Store.table(langId, 'lexicon').rows.find(r => r.id === lexId);
   if (!entry) return;
-  const pos = [].concat(entry.cells.pos || []);
-  const forms = [...new Set(pos.flatMap(p => Parse.inflectionForms(lang, p)))];
+  const forms = Parse.inflectionForms(lang, [].concat(entry.cells.pos || [])[0]);
   const id = Math.random().toString(36).slice(2, 10);
-  const first = { lex: lexId, word: entry.cells.word || '' };
-  if (forms[0]) first.form = forms[0];
   showTab('inflection');
   Store.transact('New inflection', () => {
-    const end = Store.table(langId, 'inflections').rows.length;
-    Store.addRow(langId, 'inflections', first, { id });
-    Store.insertRows(langId, 'inflections', end + 1, forms.slice(1).map(form => ({ form })));
+    Store.addRow(langId, 'inflections', { lex: lexId, word: entry.cells.word || '', forms: {} }, { id });
     Store.updateCell(langId, 'lexicon', lexId, 'inflection', id);
-  }, { meta: { focus: { table: 'inflections', row: id, col: 'inflected' } } });
+  }, { meta: { focus: { table: 'inflections', row: forms[0] ? `${id}:${forms[0].id}` : id, col: 'inflected' } } });
 }
+
 function renderLanguage() {
   Sheet.render($('#phrases-table'), langId, 'phrases', ctx);
   for (const id of ['lexicon', 'inflections', 'inflectionTypes', 'consonants', 'vowels', 'diphthongs']) Sheet.render($(`#${id}-table`), langId, id, ctx);
