@@ -137,7 +137,7 @@ const Sheet = (() => {
       if (!lines.length) {
         const note = td('note');
         note.colSpan = 2;
-        note.textContent = set.pos ? `No forms yet: add layers under "${ctx.posName(set.pos)}" in Inflection Types.` : 'Give this word a part of speech in the Lexicon.';
+        note.textContent = set.traits.some(x => !x.value) ? 'Choose this word\'s traits in the Lexicon.' : set.pos ? `No forms yet: add layers under "${ctx.posName(set.pos)}" in Inflection Types.` : 'Give this word a part of speech in the Lexicon.';
         first.appendChild(note);
       }
       lines.forEach((line, k) => {
@@ -218,9 +218,10 @@ const Sheet = (() => {
     };
 
     // A node's cell: its label (a part of speech dropdown for a type), its ↓ and → buttons if it has no layer yet, and delete.
-    const itemCell = (node, above, depth, r) => {
+    const isTrait = owner => !!owner && owner.row.cells.layerKind === 'trait';
+    const itemCell = (node, above, depth, r, owner) => {
       const td = document.createElement('td');
-      td.className = 'layer-item' + (depth === 0 ? ' layer-root' : '');
+      td.className = 'layer-item' + (depth === 0 ? ' layer-root' : '') + (isTrait(owner) ? ' trait' : '');
       td.dataset.row = node.id;
       const leaf = !kids(node).length;
       td.rowSpan = height(node);
@@ -261,11 +262,26 @@ const Sheet = (() => {
     // The empty cell at the bottom of a list: typing (or choosing) there adds to the list.
     const addCell = (parent, depth, r) => {
       const td = document.createElement('td');
-      td.className = 'layer-add';
+      td.className = 'layer-add' + (isTrait(parent) ? ' trait' : '');
       td.dataset.row = 'add-' + (parent ? parent.id : 'root');
       td.colSpan = cols - depth;
       let created = null;
-      td.appendChild(depth === 0
+      const box = document.createElement('div');
+      box.className = 'layer-box';
+      td.appendChild(box);
+      // Which kind of layer this list is; click to switch.
+      if (parent && kids(parent).length) {
+        const kind = document.createElement('button');
+        kind.className = 'layer-kind';
+        kind.tabIndex = -1;
+        kind.textContent = isTrait(parent) ? 'trait layer' : 'inflection layer';
+        kind.title = isTrait(parent)
+          ? 'Trait layer: a word is one of these (chosen in the Lexicon). Click to make it an inflection layer.'
+          : 'Inflection layer: a word has a form for each of these. Click to make it a trait layer.';
+        kind.onclick = () => Model.setLayerKind(langId, parent.table, parent.id, isTrait(parent) ? undefined : 'trait');
+        box.appendChild(kind);
+      }
+      box.prepend(depth === 0
         ? posField(ctx.pos(), '', v => { if (v) Model.addType(langId, v); }, 'Add a part of speech…')
         : labelField('', v => {
           if (created) return Store.updateCell(langId, V, created, 'label', v, { silent: true, coalesce: `${T}:${created}:label` });
@@ -277,7 +293,7 @@ const Sheet = (() => {
     // Lay out a list starting at row r, at the given depth; returns the row after it.
     const layout = (list, parent, depth, r) => {
       list.forEach((node, i) => {
-        itemCell(node, list[i - 1], depth, r);
+        itemCell(node, list[i - 1], depth, r, parent);
         const under = kids(node);
         if (under.length) layout(under, node, depth + 1, r);
         r += height(node);
@@ -352,6 +368,7 @@ const Sheet = (() => {
       if (type === 'text' || type === 'word' || type === 'phrase') td.appendChild(textCell(t, row, col, value, type, write, ctx));
       else if (type === 'pos') td.appendChild(posField(ctx.pos(), value, v => write(col.id, v, { focus: {} }), '', col.id));
       else if (type === 'inflection') td.appendChild(inflectionCell(t, row, col, value, write, ctx));
+      else if (type === 'traits') td.appendChild(traitsCell(langId, row, col, ctx));
       else if (type === 'diphthong') td.appendChild(diphthongCell(t, row, col, value, write));
       else td.appendChild(phonemeCell(t, row, col, value, type, write));
       tr.appendChild(td);
@@ -493,6 +510,24 @@ const Sheet = (() => {
     return box;
   }
 
+  // Lexicon: the word's traits. One dropdown per trait layer its part of speech has in Inflection Types
+  // (a layer under a trait value only once that value is chosen). An unchosen one lists what to choose from.
+  function traitsCell(langId, row, col, ctx) {
+    const box = document.createElement('div');
+    box.className = 'traits';
+    for (const trait of row ? ctx.traits(row) : []) {
+      const sel = document.createElement('select');
+      sel.className = 'pos-select' + (trait.value ? '' : ' needed');
+      sel.dataset.col = col.id;
+      sel.setAttribute('aria-label', 'Trait');
+      sel.innerHTML = `<option value="">${esc(trait.options.map(o => o.label || '?').join(' / '))}</option>` +
+        trait.options.map(o => `<option value="${esc(o.id)}"${o.id === trait.value ? ' selected' : ''}>${esc(o.label || '?')}</option>`).join('');
+      sel.onchange = () => Model.setTrait(langId, row.id, trait.options.map(o => o.id), sel.value);
+      box.appendChild(sel);
+    }
+    return box;
+  }
+
   // Lexicon: which inflection the word follows. Once the word has a part of speech, offers the inflections
   // whose model shares it, plus New (which sets one up from Inflection Types). Hover shows the word's forms.
   function inflectionCell(t, row, col, value, write, ctx) {
@@ -504,7 +539,8 @@ const Sheet = (() => {
     const fill = () => {
       const all = ctx.patterns();
       const current = Parse.findPattern(all, value);
-      const options = pos ? all.filter(p => p.pos === pos) : [];
+      const key = Parse.traitKey(row ? ctx.traits(row) : []);
+      const options = pos ? all.filter(p => p.pos === pos && p.traitKey === key) : [];
       if (current && !options.includes(current)) options.push(current);
       sel.innerHTML = '<option value=""></option>' +
         options.map(p => `<option value="${esc(p.id)}"${p === current ? ' selected' : ''}>${esc(p.name)}</option>`).join('') +

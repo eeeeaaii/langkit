@@ -98,6 +98,7 @@ const ctx = {
   patterns: () => Parse.patterns(Store.language(langId)),
   lexiconWord: id => Store.row(langId, 'lexicon', id)?.cells.word,
   pos: () => Store.rows(langId, 'partsOfSpeech').map(r => ({ id: r.id, name: r.cells.name || '' })),
+  traits: row => Parse.wordTraits(Store.language(langId), row),
   posName: id => Parse.posName(Store.language(langId), id),
   newInflection: lexId => newInflection(lexId),
 };
@@ -107,7 +108,7 @@ const ctx = {
 function newInflection(lexId) {
   const entry = Store.row(langId, 'lexicon', lexId);
   if (!entry) return;
-  const first = Parse.inflectionForms(Store.language(langId), entry.cells.pos)[0];
+  const first = Parse.inflectionForms(Store.language(langId), entry.cells.pos, Parse.traitsOf(Store.language(langId), lexId))[0];
   showTab('inflection');
   Model.addInflection(langId, lexId, { meta: id => ({ focus: { table: 'inflections', row: first ? `${id}:${first.id}` : id, col: 'inflected' } }) });
 }

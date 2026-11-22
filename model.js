@@ -22,8 +22,10 @@ const Model = (() => {
   // Add a value to the list under a type (parent '') or under another value.
   function addValue(langId, type, parent, label) {
     const id = Schema.uid();
-    const startsLayer = parent && !valuesUnder(langId, type, parent).length;
+    const starts = !valuesUnder(langId, type, parent).length;
+    const startsLayer = parent && starts;
     Store.transact('Add', () => {
+      if (starts) setLayerKind(langId, parent ? VALUES : TYPES, parent || type, undefined); // a new layer starts as an inflection layer
       Store.addRow(langId, VALUES, { type, parent: parent || '', label }, { id });
       if (startsLayer) moveForms(langId, parent, id);
     }, { coalesce: `${TYPES}:${id}:label`, meta: { focus: { table: TYPES, row: id, col: 'label' } } });
@@ -35,14 +37,29 @@ const Model = (() => {
     const type = Store.row(langId, VALUES, to)?.cells.type;
     Store.transact('Copy layers', () => {
       let first = null;
+      setLayerKind(langId, VALUES, to, Store.row(langId, VALUES, from)?.cells.layerKind);
       const copy = (src, dst) => valuesUnder(langId, type, src).forEach(k => {
         const id = Schema.uid();
-        Store.addRow(langId, VALUES, { type, parent: dst, label: k.cells.label || '' }, { id });
+        const cells = { type, parent: dst, label: k.cells.label || '' };
+        if (k.cells.layerKind) cells.layerKind = k.cells.layerKind;
+        Store.addRow(langId, VALUES, cells, { id });
         if (valuesUnder(langId, type, k.id).length) copy(k.id, id); else first ||= id;
       });
       copy(from, to);
       if (first) moveForms(langId, to, first);
     }, { meta: { focus: { table: TYPES, row: to, col: 'label' } } });
+  }
+
+  // Say what kind the layer under a type or value is: 'trait', or nothing for an inflection layer.
+  const setLayerKind = (langId, tableId, rowId, kind, opts) => Store.updateCell(langId, tableId, rowId, 'layerKind', kind || undefined, opts);
+
+  // Give a word its value in a trait layer (options: every value of that layer). '' takes the choice back.
+  function setTrait(langId, word, options, value, opts) {
+    const among = new Set(options);
+    Store.transact('Set trait', () => {
+      rows(langId, 'wordTraits').filter(t => t.cells.word === word && among.has(t.cells.value)).forEach(t => Store.deleteRow(langId, 'wordTraits', t.id));
+      if (value) Store.addRow(langId, 'wordTraits', { word, value });
+    }, opts);
   }
 
   // How many written-out forms deleting this row would take with it.
@@ -76,5 +93,5 @@ const Model = (() => {
     });
   }
 
-  return { valuesUnder, addType, addValue, copyLayers, formsLostBy, setForm, addInflection, removeInflection };
+  return { valuesUnder, setLayerKind, setTrait, addType, addValue, copyLayers, formsLostBy, setForm, addInflection, removeInflection };
 })();
