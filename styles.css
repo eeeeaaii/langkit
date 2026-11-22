@@ -192,3 +192,15 @@ td.note { padding:4px 8px; color:var(--muted); font-style:italic; }
 .layer-confirm span { flex:1 1 100%; font-size:12px; }
 .layer-confirm button { font:inherit; font-size:12px; padding:2px 8px; border:1px solid var(--line); border-radius:4px; background:var(--cell); color:var(--fg); cursor:pointer; }
 .layer-confirm button.danger { background:#e03131; border-color:#e03131; color:#fff; }
+
+/* Trait layers: a word is one of these values. Tinted so they read differently from inflection layers. */
+table.layers td.trait { background:color-mix(in srgb, var(--missing) 9%, var(--cell)); }
+.layer-kind { flex:none; border:1px solid var(--line); background:var(--cell); color:var(--muted); cursor:pointer; border-radius:10px; padding:1px 8px; margin:0 4px; font:inherit; font-size:11px; white-space:nowrap; }
+.layer-kind:hover { color:#fff; background:var(--accent); border-color:var(--accent); }
+td.trait .layer-kind { color:var(--missing); border-color:var(--missing); }
+td.trait .layer-kind:hover { color:#fff; background:var(--missing); }
+/* Lexicon traits: one dropdown per trait, side by side. */
+.traits { display:flex; }
+.traits select.pos-select { flex:0 1 auto; width:auto; min-width:0; }
+td.c-traits { min-width:160px; }
+.traits select.needed { color:var(--nophoneme); font-style:italic; }

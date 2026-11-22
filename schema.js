@@ -52,18 +52,27 @@ const Schema = (() => {
       { id: 'word', name: 'Word', type: 'word' },
       { id: 'english', name: 'English', type: 'text' },
       { id: 'pos', name: 'Part of Speech', type: 'pos' },
+      { id: 'traits', name: 'Traits', type: 'traits' }, // drawn from wordTraits, not a field of the row
       { id: 'inflection', name: 'Inflection', type: 'inflection' },
       { id: 'note', name: 'Note', type: 'text' },
       { id: 'sentence', name: 'In a Sentence', type: 'word' },
       { id: 'sentenceTranslation', name: 'Sentence Translation', type: 'text' },
     ] },
 
-    // Inflection Types. A type is the set of forms a part of speech has: { pos }.
+    // Inflection Types. A type is the set of forms a part of speech has: { pos, layerKind }.
     { id: 'inflectionTypes', refs: { pos: ['partsOfSpeech', 'cascade'] } },
-    // The layers of a type, as a tree: { type, parent (another value, or '' in the first layer), label }.
-    // Rows are in display order. A value with nothing under it is one form of the part of speech, named by
-    // the labels on the way down to it: indicative > present > 1st > singular.
+    // The layers of a type, as a tree: { type, parent (another value, or '' in the first layer), label, layerKind }.
+    // Rows are in display order. A layer is the list of values under one type or value, and there are two kinds.
+    // layerKind says which kind the layer UNDER this row is:
+    //   (nothing): an inflection layer. A word has a form for every value in it.
+    //   'trait': a trait layer. A word is exactly one of its values (see wordTraits), and only what is under
+    //     that value applies to the word. E.g. a noun is masculine or feminine.
+    // The two kinds can alternate in any order on the way down. A value with nothing under it is one form,
+    // named by the inflection labels on the way down to it: indicative > present > 1st > singular.
     { id: 'inflectionValues', refs: { type: ['inflectionTypes', 'cascade'], parent: ['inflectionValues', 'cascade'] } },
+
+    // One trait of one word: { word, value: the value it has in some trait layer }.
+    { id: 'wordTraits', refs: { word: ['lexicon', 'cascade'], value: ['inflectionValues', 'cascade'] } },
 
     // A named way of inflecting that words can follow: { name (optional), model: the word that shows how }.
     { id: 'inflections', refs: { model: ['lexicon', 'cascade'] } },

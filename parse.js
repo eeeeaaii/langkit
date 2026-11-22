@@ -44,25 +44,45 @@ const Parse = (() => {
 
   const posName = (lang, id) => trim(rows(lang, 'partsOfSpeech').find(p => p.id === id)?.cells.name);
 
-  // The forms of a part of speech: every value in its Inflection Types layers that has nothing under it,
-  // named by the labels on the way down to it, e.g. "indicative present 1st singular". [{ id, label }]
-  function inflectionForms(lang, pos) {
-    if (!pos) return [];
+  // The values a word has chosen in trait layers, as a Set of value ids.
+  const traitsOf = (lang, wordId) => new Set(rows(lang, 'wordTraits').filter(t => t.cells.word === wordId).map(t => t.cells.value));
+
+  // Walk a part of speech's Inflection Types layers for a word with the given trait values.
+  // An inflection layer is followed into every value; a trait layer only into the value the word has.
+  // Returns { forms: [{ id, label }], traits: [{ id (the row the layer is under), options: [{ id, label }], value }] }.
+  //   forms: each value with nothing under it that an inflection layer leads to, named by the inflection labels
+  //     on the way down, e.g. "indicative present 1st singular".
+  //   traits: the trait layers this word has to choose in, in order, with its choice ('' if not made yet).
+  function paradigm(lang, pos, chosen = new Set()) {
+    const forms = [], traits = [];
+    if (!pos) return { forms, traits };
     const values = rows(lang, 'inflectionValues');
-    const out = [];
     for (const type of rows(lang, 'inflectionTypes').filter(t => t.cells.pos === pos)) {
       const mine = values.filter(v => v.cells.type === type.id);
-      const kids = parent => mine.filter(v => (v.cells.parent || '') === parent);
-      const walk = (node, path) => {
-        const label = trim(node.cells.label);
-        const here = label ? [...path, label] : path;
-        const under = kids(node.id);
-        if (!under.length) out.push({ id: node.id, label: here.join(' ') }); else under.forEach(k => walk(k, here));
+      const layer = (owner, parent, path, inflected) => {
+        const under = mine.filter(v => (v.cells.parent || '') === parent);
+        if (!under.length) return false;
+        if (owner.cells.layerKind === 'trait') {
+          const pick = under.find(v => chosen.has(v.id));
+          traits.push({ id: owner.id, options: under.map(v => ({ id: v.id, label: trim(v.cells.label) })), value: pick?.id || '' });
+          if (pick) value(pick, path, inflected);
+        } else {
+          under.forEach(v => value(v, trim(v.cells.label) ? [...path, trim(v.cells.label)] : path, true));
+        }
+        return true;
       };
-      kids('').forEach(k => walk(k, []));
+      const value = (v, path, inflected) => {
+        if (!layer(v, v.id, path, inflected) && inflected) forms.push({ id: v.id, label: path.join(' ') });
+      };
+      layer(type, '', [], false);
     }
-    return out;
+    return { forms, traits };
   }
+  const inflectionForms = (lang, pos, chosen) => paradigm(lang, pos, chosen).forms;
+  // The trait layers a Lexicon entry has to choose in, with its choices.
+  const wordTraits = (lang, entry) => entry ? paradigm(lang, entry.cells.pos, traitsOf(lang, entry.id)).traits : [];
+  // Two words can share an inflection only if they made the same choices: this is the same for both.
+  const traitKey = traits => traits.map(t => t.value).join(',');
 
   // Every inflection with its model word and that word's forms, in Inflection Types order.
   // Returns [{ id, row, lex (the model's Lexicon id), key (the model word), pos, forms: [{ id, label, inflected }],
@@ -73,10 +93,12 @@ const Parse = (() => {
       const entry = lex.find(r => r.id === row.cells.model);
       const pos = entry?.cells.pos || '';
       const mine = entry ? forms.filter(f => f.cells.word === entry.id) : [];
+      const shape = paradigm(lang, pos, entry ? traitsOf(lang, entry.id) : undefined);
       const written = new Map(mine.filter(f => f.cells.value).map(f => [f.cells.value, trim(f.cells.text)]));
       return {
         id: row.id, row, lex: entry?.id, key: trim(entry?.cells.word), pos,
-        forms: inflectionForms(lang, pos).map(f => ({ ...f, inflected: written.get(f.id) || '' })),
+        traits: shape.traits,
+        forms: shape.forms.map(f => ({ ...f, inflected: written.get(f.id) || '' })),
         legacy: mine.filter(f => !f.cells.value).map(f => ({ id: f.id, form: f.cells.label || '', inflected: f.cells.text || '' })),
       };
     });
@@ -98,6 +120,7 @@ const Parse = (() => {
         name: trim(g.row.cells.name) || 'like ' + g.key,
         model,
         pos: g.pos,
+        traitKey: traitKey(g.traits),
         ending: model.slice(stem.length),
         forms: forms.map(f => ({ form: f.form, ending: f.inflected.slice(stem.length) })),
       };
@@ -182,5 +205,5 @@ const Parse = (() => {
     return text.split(SEPARATOR).filter(s => s !== '').map(s => ({ text: s, word: !SEPARATOR.test(s) }));
   }
 
-  return { inventory, segment, posName, inflectionSets, patterns, findPattern, follow, inflections, inflectionForms, lexicon, glosses, usage, words };
+  return { inventory, segment, posName, wordTraits, traitKey, traitsOf, inflectionSets, patterns, findPattern, follow, inflections, inflectionForms, lexicon, glosses, usage, words };
 })();
